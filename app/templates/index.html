@@ -109,6 +109,16 @@
   <h2>Library</h2>
   <div id="library"></div>
 
+  <h2>System</h2>
+  <div class="card">
+    <div class="row" style="flex-wrap:wrap;gap:8px;">
+      <button id="btn-update" class="secondary" style="padding:10px 14px;">Update yt-dlp</button>
+      <button id="btn-restart" class="danger" style="padding:10px 14px;">Restart service</button>
+    </div>
+    <div id="admin-msg" class="meta" style="margin-top:8px;"></div>
+    <pre id="admin-output" style="display:none;margin:8px 0 0;font-size:12px;white-space:pre-wrap;word-break:break-all;background:var(--bg);padding:8px;border-radius:6px;overflow:auto;max-height:200px;"></pre>
+  </div>
+
 <script>
 const form = document.getElementById('dl-form');
 const urlInput = document.getElementById('url');
@@ -240,6 +250,55 @@ async function refresh() {
 
 refresh();
 setInterval(refresh, 1500);
+
+const btnUpdate = document.getElementById('btn-update');
+const btnRestart = document.getElementById('btn-restart');
+const adminMsg = document.getElementById('admin-msg');
+const adminOutput = document.getElementById('admin-output');
+
+function setAdminBusy(busy) {
+  btnUpdate.disabled = busy;
+  btnRestart.disabled = busy;
+}
+
+btnUpdate.addEventListener('click', async () => {
+  if (!confirm('Update yt-dlp now? This may take up to a minute.')) return;
+  setAdminBusy(true);
+  adminMsg.textContent = 'Updating yt-dlp…';
+  adminOutput.style.display = 'none';
+  try {
+    const r = await fetch('/api/admin/update-ytdlp', {method: 'POST'});
+    const j = await r.json();
+    adminMsg.textContent = j.ok
+      ? 'Updated. Restart the service to use the new version.'
+      : 'Update failed.';
+    if (j.output) {
+      adminOutput.textContent = j.output;
+      adminOutput.style.display = 'block';
+    }
+  } catch (err) {
+    adminMsg.textContent = `Error: ${err.message}`;
+  } finally {
+    setAdminBusy(false);
+  }
+});
+
+btnRestart.addEventListener('click', async () => {
+  if (!confirm('Restart the server? The page will reconnect automatically.')) return;
+  setAdminBusy(true);
+  adminMsg.textContent = 'Restarting…';
+  adminOutput.style.display = 'none';
+  try { await fetch('/api/admin/restart', {method: 'POST'}); } catch (_) {}
+  adminMsg.textContent = 'Waiting for server to come back…';
+  const poll = setInterval(async () => {
+    try {
+      await fetch('/api/downloads');
+      clearInterval(poll);
+      adminMsg.textContent = 'Server restarted.';
+      setAdminBusy(false);
+    } catch (_) {}
+  }, 1500);
+});
 </script>
 </body>
 </html>

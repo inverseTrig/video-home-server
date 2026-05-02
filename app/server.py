@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -52,6 +55,27 @@ def create_app() -> Flask:
     def api_file(name: str):
         # send_from_directory itself blocks traversal, but be explicit.
         return send_from_directory(VIDEOS_DIR, name, as_attachment=True)
+
+    @app.post("/api/admin/update-ytdlp")
+    def api_update_ytdlp():
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+                capture_output=True, text=True, timeout=120,
+            )
+            output = (result.stdout + result.stderr).strip()
+            return jsonify({"ok": result.returncode == 0, "output": output})
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "output": "Timed out after 120 s"}), 500
+
+    @app.post("/api/admin/restart")
+    def api_restart():
+        def _do() -> None:
+            import time
+            time.sleep(1)
+            subprocess.run(["sudo", "systemctl", "restart", "video-home-server.service"])
+        threading.Thread(target=_do, daemon=True).start()
+        return jsonify({"ok": True})
 
     return app
 
