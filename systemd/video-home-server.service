@@ -1,0 +1,19 @@
+[Unit]
+Description=Video Home Server (yt-dlp web UI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/video-home-server
+Environment=VIDEOS_DIR=/home/pi/videos
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+ExecStart=/opt/video-home-server/.venv/bin/python -m app.server
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

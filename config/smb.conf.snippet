@@ -1,0 +1,11 @@
+# Video Home Server — guest read-only SMB share.
+# Appended to /etc/samba/smb.conf by scripts/install.sh.
+# The installer also injects "map to guest = Bad User" into [global] if missing.
+
+[Videos]
+   path = /home/pi/videos
+   browseable = yes
+   read only = yes
+   guest ok = yes
+   guest only = yes
+   force user = pi

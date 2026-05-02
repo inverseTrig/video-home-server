@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Video Home Server</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --fg: #1c1c1e;
+    --muted: #6e6e73;
+    --accent: #0a84ff;
+    --danger: #ff3b30;
+    --border: #d1d1d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000;
+      --card: #1c1c1e;
+      --fg: #f5f5f7;
+      --muted: #8e8e93;
+      --border: #3a3a3c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+  }
+  h1 { font-size: 22px; margin: 16px 0 12px; }
+  h2 { font-size: 15px; text-transform: uppercase; color: var(--muted); margin: 24px 4px 8px; letter-spacing: 0.5px; }
+  .card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+  }
+  form { display: flex; gap: 8px; }
+  input[type=url] {
+    flex: 1;
+    font-size: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    min-width: 0;
+  }
+  button {
+    font-size: 16px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+  button.secondary { background: transparent; color: var(--accent); padding: 8px 10px; }
+  button.danger { background: transparent; color: var(--danger); padding: 8px 10px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  .name { font-weight: 500; word-break: break-word; }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .progress {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .progress > div {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+  .empty { color: var(--muted); padding: 8px 4px; font-size: 14px; }
+  .err { color: var(--danger); font-size: 13px; margin-top: 4px; word-break: break-word; }
+  .badge {
+    font-size: 11px; text-transform: uppercase; padding: 2px 6px;
+    border-radius: 4px; background: var(--border); color: var(--muted);
+  }
+  .badge.done { background: #34c75933; color: #34c759; }
+  .badge.error { background: #ff3b3033; color: #ff3b30; }
+  .badge.downloading { background: #0a84ff33; color: var(--accent); }
+  a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>Video Home Server</h1>
+
+  <div class="card">
+    <form id="dl-form">
+      <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+             placeholder="Paste YouTube URL" required>
+      <button type="submit">Get</button>
+    </form>
+    <div id="form-msg" class="meta" style="margin-top:8px;"></div>
+  </div>
+
+  <h2>Downloading</h2>
+  <div id="downloads"></div>
+
+  <h2>Library</h2>
+  <div id="library"></div>
+
+<script>
+const form = document.getElementById('dl-form');
+const urlInput = document.getElementById('url');
+const formMsg = document.getElementById('form-msg');
+const downloadsEl = document.getElementById('downloads');
+const libraryEl = document.getElementById('library');
+
+function fmtSize(n) {
+  const u = ['B','KB','MB','GB','TB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${u[i]}`;
+}
+
+function fmtEta(s) {
+  if (s == null) return '';
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s/60)}m ${s%60}s`;
+  return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = urlInput.value.trim();
+  if (!url) return;
+  formMsg.textContent = 'Queuing…';
+  try {
+    const r = await fetch('/api/download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error || `HTTP ${r.status}`);
+    }
+    urlInput.value = '';
+    formMsg.textContent = 'Queued.';
+    refresh();
+  } catch (err) {
+    formMsg.textContent = `Error: ${err.message}`;
+  }
+});
+
+function renderDownloads(jobs) {
+  const active = jobs.filter(j => j.status === 'queued' || j.status === 'downloading');
+  const recent = jobs.filter(j => j.status === 'done' || j.status === 'error');
+  const list = [...active, ...recent];
+  if (!list.length) {
+    downloadsEl.innerHTML = '<div class="empty">No downloads yet.</div>';
+    return;
+  }
+  downloadsEl.innerHTML = list.map(j => {
+    const title = j.title || j.url;
+    const pct = Math.max(0, Math.min(100, j.progress || 0));
+    const etaBits = [];
+    if (j.status === 'downloading') {
+      if (j.speed) etaBits.push(`${fmtSize(j.speed)}/s`);
+      if (j.eta != null) etaBits.push(`ETA ${fmtEta(j.eta)}`);
+    }
+    return `
+      <div class="card">
+        <div class="row">
+          <div class="grow">
+            <div class="name">${escapeHtml(title)}</div>
+            <div class="meta">${pct.toFixed(1)}% · ${etaBits.join(' · ')}</div>
+          </div>
+          <span class="badge ${j.status}">${j.status}</span>
+        </div>
+        ${j.status === 'downloading' || j.status === 'queued'
+          ? `<div class="progress"><div style="width:${pct}%"></div></div>` : ''}
+        ${j.error ? `<div class="err">${escapeHtml(j.error)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderLibrary(videos) {
+  if (!videos.length) {
+    libraryEl.innerHTML = '<div class="empty">Empty. Submit a URL above to get started.</div>';
+    return;
+  }
+  libraryEl.innerHTML = videos.map(v => `
+    <div class="card">
+      <div class="row">
+        <div class="grow">
+          <div class="name">${escapeHtml(v.name)}</div>
+          <div class="meta">${fmtSize(v.size_bytes)}</div>
+        </div>
+        <a href="/files/${encodeURIComponent(v.name)}">Open</a>
+        <button class="danger" data-name="${escapeAttr(v.name)}">Delete</button>
+      </div>
+    </div>
+  `).join('');
+  libraryEl.querySelectorAll('button.danger').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.name;
+      if (!confirm(`Delete "${name}"?`)) return;
+      const r = await fetch(`/api/library/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(`Delete failed: ${j.error || r.status}`);
+        return;
+      }
+      refresh();
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+async function refresh() {
+  try {
+    const [d, l] = await Promise.all([
+      fetch('/api/downloads').then(r => r.json()),
+      fetch('/api/library').then(r => r.json()),
+    ]);
+    renderDownloads(d.jobs || []);
+    renderLibrary(l.videos || []);
+  } catch (e) {
+    // ignore transient network errors; next tick will retry
+  }
+}
+
+refresh();
+setInterval(refresh, 1500);
+</script>
+</body>
+</html>
