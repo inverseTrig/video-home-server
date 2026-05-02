@@ -10,7 +10,8 @@ fi
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL_DIR="/opt/video-home-server"
-VIDEOS_DIR="/home/pi/videos"
+USB_MOUNT="/mnt/usb"
+VIDEOS_DIR="${USB_MOUNT}/videos"
 PI_USER="pi"
 
 echo "==> Installing apt packages"
@@ -22,6 +23,12 @@ apt-get install -y \
   vsftpd \
   samba samba-common-bin \
   avahi-daemon
+
+echo "==> Creating USB mount point at ${USB_MOUNT}"
+mkdir -p "${USB_MOUNT}"
+echo "    NOTE: Add your USB drive to /etc/fstab to auto-mount it at ${USB_MOUNT}."
+echo "    Example (replace UUID with yours from 'blkid'):"
+echo "    UUID=<your-uuid>  ${USB_MOUNT}  auto  defaults,nofail  0  2"
 
 echo "==> Creating videos directory at ${VIDEOS_DIR}"
 install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}"
