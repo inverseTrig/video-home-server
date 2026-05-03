@@ -41,7 +41,7 @@
     margin-bottom: 10px;
     border: 1px solid var(--border);
   }
-  form { display: flex; gap: 8px; }
+  .url-row { display: flex; gap: 8px; }
   input[type=url] {
     flex: 1;
     font-size: 16px;
@@ -60,7 +60,9 @@
     background: var(--accent);
     color: white;
     font-weight: 600;
+    cursor: pointer;
   }
+  button:disabled { opacity: 0.5; cursor: default; }
   button.secondary { background: transparent; color: var(--accent); padding: 8px 10px; }
   button.danger { background: transparent; color: var(--danger); padding: 8px 10px; }
   .row { display: flex; align-items: center; gap: 10px; }
@@ -84,23 +86,75 @@
   .badge {
     font-size: 11px; text-transform: uppercase; padding: 2px 6px;
     border-radius: 4px; background: var(--border); color: var(--muted);
+    white-space: nowrap;
   }
   .badge.done { background: #34c75933; color: #34c759; }
   .badge.error { background: #ff3b3033; color: #ff3b30; }
   .badge.downloading { background: #0a84ff33; color: var(--accent); }
   a { color: var(--accent); text-decoration: none; }
+
+  /* Format picker */
+  #format-step { display: none; }
+  #format-step .video-title {
+    font-weight: 600;
+    font-size: 15px;
+    margin-bottom: 14px;
+    word-break: break-word;
+  }
+  .fmt-group { margin-bottom: 12px; }
+  .fmt-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    margin-bottom: 5px;
+  }
+  select {
+    width: 100%;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    appearance: auto;
+  }
+  .fmt-actions { display: flex; gap: 8px; margin-top: 4px; }
+  .fmt-actions button { flex: 1; }
+  .fmt-actions button.secondary { flex: 0; }
 </style>
 </head>
 <body>
   <h1>Video Home Server</h1>
 
   <div class="card">
-    <form id="dl-form">
-      <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
-             placeholder="Paste YouTube URL" required>
-      <button type="submit">Get</button>
-    </form>
-    <div id="form-msg" class="meta" style="margin-top:8px;"></div>
+    <!-- Step 1: URL entry -->
+    <div id="url-step">
+      <div class="url-row">
+        <input id="url-input" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+               placeholder="Paste YouTube URL">
+        <button id="btn-inspect">Get</button>
+      </div>
+      <div id="form-msg" class="meta" style="margin-top:8px;"></div>
+    </div>
+
+    <!-- Step 2: Format picker -->
+    <div id="format-step">
+      <div class="video-title" id="video-title"></div>
+      <div class="fmt-group">
+        <div class="fmt-label">Video</div>
+        <select id="sel-video"></select>
+      </div>
+      <div class="fmt-group">
+        <div class="fmt-label">Audio</div>
+        <select id="sel-audio"></select>
+      </div>
+      <div class="fmt-actions">
+        <button id="btn-download">Download</button>
+        <button id="btn-cancel" class="secondary">Cancel</button>
+      </div>
+      <div id="fmt-msg" class="meta" style="margin-top:8px;"></div>
+    </div>
   </div>
 
   <h2>Downloading</h2>
@@ -120,13 +174,10 @@
   </div>
 
 <script>
-const form = document.getElementById('dl-form');
-const urlInput = document.getElementById('url');
-const formMsg = document.getElementById('form-msg');
-const downloadsEl = document.getElementById('downloads');
-const libraryEl = document.getElementById('library');
+// ── Helpers ────────────────────────────────────────────────────────────────
 
 function fmtSize(n) {
+  if (n == null) return '';
   const u = ['B','KB','MB','GB','TB'];
   let i = 0;
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
@@ -140,28 +191,131 @@ function fmtEta(s) {
   return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
 }
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// ── Format picker state ────────────────────────────────────────────────────
+
+let pendingUrl = '';
+
+const urlStep    = document.getElementById('url-step');
+const fmtStep    = document.getElementById('format-step');
+const urlInput   = document.getElementById('url-input');
+const formMsg    = document.getElementById('form-msg');
+const fmtMsg     = document.getElementById('fmt-msg');
+const videoTitle = document.getElementById('video-title');
+const selVideo   = document.getElementById('sel-video');
+const selAudio   = document.getElementById('sel-audio');
+const btnInspect = document.getElementById('btn-inspect');
+const btnDownload= document.getElementById('btn-download');
+const btnCancel  = document.getElementById('btn-cancel');
+
+function showUrlStep() {
+  urlStep.style.display = '';
+  fmtStep.style.display = 'none';
+  formMsg.textContent = '';
+}
+
+function showFmtStep() {
+  urlStep.style.display = 'none';
+  fmtStep.style.display = '';
+  fmtMsg.textContent = '';
+}
+
+function videoOptionLabel(f) {
+  const parts = [];
+  if (f.height) parts.push(`${f.height}p`);
+  if (f.fps > 30) parts.push(`${f.fps}fps`);
+  if (f.codec)  parts.push(f.codec);
+  const size = fmtSize(f.size);
+  if (size) parts.push(size);
+  return parts.join(' · ');
+}
+
+function audioOptionLabel(f) {
+  const parts = [];
+  if (f.abr)   parts.push(`${Math.round(f.abr)} kbps`);
+  if (f.codec) parts.push(f.codec);
+  if (f.asr)   parts.push(`${(f.asr/1000).toFixed(0)} kHz`);
+  const size = fmtSize(f.size);
+  if (size) parts.push(size);
+  return parts.join(' · ');
+}
+
+btnInspect.addEventListener('click', async () => {
   const url = urlInput.value.trim();
   if (!url) return;
-  formMsg.textContent = 'Queuing…';
+  pendingUrl = url;
+  btnInspect.disabled = true;
+  formMsg.textContent = 'Fetching formats…';
+
+  try {
+    const r = await fetch('/api/formats', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+
+    videoTitle.textContent = j.title || url;
+
+    selVideo.innerHTML = j.video.map(f =>
+      `<option value="${escapeAttr(f.id)}">${escapeHtml(videoOptionLabel(f))}</option>`
+    ).join('');
+
+    selAudio.innerHTML = j.audio.map(f =>
+      `<option value="${escapeAttr(f.id)}">${escapeHtml(audioOptionLabel(f))}</option>`
+    ).join('');
+
+    showFmtStep();
+  } catch (err) {
+    formMsg.textContent = `Error: ${err.message}`;
+  } finally {
+    btnInspect.disabled = false;
+  }
+});
+
+btnCancel.addEventListener('click', () => {
+  showUrlStep();
+});
+
+btnDownload.addEventListener('click', async () => {
+  const videoId = selVideo.value;
+  const audioId = selAudio.value;
+  const format_id = videoId && audioId ? `${videoId}+${audioId}` : (videoId || audioId || null);
+
+  btnDownload.disabled = true;
+  fmtMsg.textContent = 'Queuing…';
+
   try {
     const r = await fetch('/api/download', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url}),
+      body: JSON.stringify({url: pendingUrl, format_id}),
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));
       throw new Error(j.error || `HTTP ${r.status}`);
     }
     urlInput.value = '';
-    formMsg.textContent = 'Queued.';
+    showUrlStep();
     refresh();
   } catch (err) {
-    formMsg.textContent = `Error: ${err.message}`;
+    fmtMsg.textContent = `Error: ${err.message}`;
+  } finally {
+    btnDownload.disabled = false;
   }
 });
+
+// ── Downloads & Library polling ────────────────────────────────────────────
+
+const downloadsEl = document.getElementById('downloads');
+const libraryEl   = document.getElementById('library');
 
 function renderDownloads(jobs) {
   const active = jobs.filter(j => j.status === 'queued' || j.status === 'downloading');
@@ -179,12 +333,16 @@ function renderDownloads(jobs) {
       if (j.speed) etaBits.push(`${fmtSize(j.speed)}/s`);
       if (j.eta != null) etaBits.push(`ETA ${fmtEta(j.eta)}`);
     }
+    const merging = j.status === 'downloading' && pct >= 99;
+    const metaLine = merging
+      ? 'Merging…'
+      : `${pct.toFixed(1)}%${etaBits.length ? ' · ' + etaBits.join(' · ') : ''}`;
     return `
       <div class="card">
         <div class="row">
           <div class="grow">
             <div class="name">${escapeHtml(title)}</div>
-            <div class="meta">${pct.toFixed(1)}% · ${etaBits.join(' · ')}</div>
+            <div class="meta">${metaLine}</div>
           </div>
           <span class="badge ${j.status}">${j.status}</span>
         </div>
@@ -228,13 +386,6 @@ function renderLibrary(videos) {
   });
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-function escapeAttr(s) { return escapeHtml(s); }
-
 async function refresh() {
   try {
     const [d, l] = await Promise.all([
@@ -251,10 +402,12 @@ async function refresh() {
 refresh();
 setInterval(refresh, 1500);
 
-const btnUpdate = document.getElementById('btn-update');
+// ── Admin ──────────────────────────────────────────────────────────────────
+
+const btnUpdate  = document.getElementById('btn-update');
 const btnRestart = document.getElementById('btn-restart');
-const adminMsg = document.getElementById('admin-msg');
-const adminOutput = document.getElementById('admin-output');
+const adminMsg   = document.getElementById('admin-msg');
+const adminOutput= document.getElementById('admin-output');
 
 function setAdminBusy(busy) {
   btnUpdate.disabled = busy;

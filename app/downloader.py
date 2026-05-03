@@ -28,6 +28,66 @@ FORMAT_SELECTOR = (
     "/b"
 )
 
+_CODEC_NAMES = {
+    "avc": "H.264", "avc1": "H.264",
+    "vp9": "VP9", "vp09": "VP9",
+    "av01": "AV1", "av1": "AV1",
+    "mp4a": "AAC",
+    "opus": "Opus",
+}
+
+def _codec_short(raw: str | None) -> str | None:
+    if not raw or raw == "none":
+        return None
+    prefix = raw.split(".")[0].lower()
+    return _CODEC_NAMES.get(prefix, prefix)
+
+
+def get_formats(url: str) -> dict:
+    """Fetch available formats for *url* without downloading anything."""
+    ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url.strip(), download=False)
+
+    video_formats: list[dict] = []
+    audio_formats: list[dict] = []
+
+    for f in (info.get("formats") or []):
+        vcodec = f.get("vcodec") or "none"
+        acodec = f.get("acodec") or "none"
+        fid    = f.get("format_id", "")
+        size   = f.get("filesize") or f.get("filesize_approx")
+
+        if vcodec != "none" and acodec == "none":
+            video_formats.append({
+                "id":     fid,
+                "ext":    f.get("ext"),
+                "height": f.get("height"),
+                "fps":    round(f.get("fps") or 0),
+                "codec":  _codec_short(vcodec),
+                "vbr":    f.get("vbr"),
+                "size":   size,
+            })
+        elif acodec != "none" and vcodec == "none":
+            audio_formats.append({
+                "id":    fid,
+                "ext":   f.get("ext"),
+                "codec": _codec_short(acodec),
+                "abr":   f.get("abr"),
+                "asr":   f.get("asr"),
+                "size":  size,
+            })
+
+    video_formats.sort(key=lambda f: (f.get("height") or 0, f.get("fps") or 0), reverse=True)
+    audio_formats.sort(key=lambda f: f.get("abr") or 0, reverse=True)
+
+    return {
+        "title":    info.get("title"),
+        "duration": info.get("duration"),
+        "video":    video_formats,
+        "audio":    audio_formats,
+    }
+
 
 @dataclass
 class Job:
@@ -41,6 +101,7 @@ class Job:
     eta: Optional[int] = None
     speed: Optional[float] = None
     created_at: float = field(default_factory=time.time)
+    format_id: Optional[str] = None  # e.g. "299+140"; None → use FORMAT_SELECTOR
 
 
 class Downloader:
@@ -58,8 +119,8 @@ class Downloader:
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
-    def submit(self, url: str) -> Job:
-        job = Job(id=uuid.uuid4().hex[:8], url=url.strip())
+    def submit(self, url: str, format_id: str | None = None) -> Job:
+        job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id)
         with self._lock:
             self._jobs[job.id] = job
         self._queue.put(job)
@@ -110,7 +171,7 @@ class Downloader:
                 job.speed = None
 
         ydl_opts = {
-            "format": FORMAT_SELECTOR,
+            "format": job.format_id or FORMAT_SELECTOR,
             "merge_output_format": "mp4",
             "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
             "noplaylist": True,
