@@ -26,14 +26,31 @@ apt-get install -y \
 
 echo "==> Creating USB mount point at ${USB_MOUNT}"
 mkdir -p "${USB_MOUNT}"
+
+# Resolve the numeric uid/gid for PI_USER so we can embed them in the fstab hint.
+PI_UID="$(id -u "${PI_USER}" 2>/dev/null || echo 1000)"
+PI_GID="$(id -g "${PI_USER}" 2>/dev/null || echo 1000)"
+
 echo "    NOTE: Add your USB drive to /etc/fstab to auto-mount it at ${USB_MOUNT}."
-echo "    Example (replace UUID with yours from 'blkid'):"
-echo "    UUID=<your-uuid>  ${USB_MOUNT}  auto  defaults,nofail  0  2"
+echo "    For exFAT drives (most USB sticks) use uid/gid so the service can write:"
+echo "    UUID=<your-uuid>  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0"
+echo "    For ext4 drives the simpler form works:"
+echo "    UUID=<your-uuid>  ${USB_MOUNT}  ext4  defaults,nofail  0  2"
 
 echo "==> Creating videos directory at ${VIDEOS_DIR}"
-# exFAT doesn't support chown; fall back to plain mkdir if install fails.
+# exFAT doesn't support chown; ownership comes from mount options instead.
+# Try the ownership-aware install first; fall back to plain mkdir on exFAT.
 if ! install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}" 2>/dev/null; then
   mkdir -p "${VIDEOS_DIR}"
+fi
+
+# Verify the service user can actually write here; fail loudly if not.
+if ! sudo -u "${PI_USER}" test -w "${VIDEOS_DIR}" 2>/dev/null; then
+  echo ""
+  echo "  WARNING: ${VIDEOS_DIR} is not writable by '${PI_USER}'."
+  echo "  Downloads will fail with 'Permission denied' until this is fixed."
+  echo "  If the drive is exFAT, re-mount it with uid=${PI_UID},gid=${PI_GID} (see fstab hint above)."
+  echo ""
 fi
 
 echo "==> Syncing repo to ${INSTALL_DIR}"
