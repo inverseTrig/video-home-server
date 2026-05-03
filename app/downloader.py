@@ -220,7 +220,6 @@ class Downloader:
                 "progress_hooks": [hook],
                 "retries": 3,
                 "fragment_retries": 3,
-                "concurrent_fragment_downloads": 4,
                 **extra,
             }
 
