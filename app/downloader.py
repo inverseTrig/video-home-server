@@ -229,9 +229,9 @@ class Downloader:
                 job.eta = None
                 job.speed = None
 
-        with _cookie_opts(job.cookies) as extra:
-            ydl_opts: dict = {
-                "format": job.format_id or FORMAT_SELECTOR,
+        def _base_opts(fmt: str, extra: dict) -> dict:
+            return {
+                "format": fmt,
                 "merge_output_format": "mp4",
                 "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
                 "noplaylist": True,
@@ -245,16 +245,30 @@ class Downloader:
                 **extra,
             }
 
-            try:
-                with YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(job.url, download=True)
-                    if info:
-                        job.title = info.get("title") or job.title
-                        final = info.get("requested_downloads") or []
-                        if final:
-                            job.filename = Path(final[0]["filepath"]).name
-                job.status = "done"
-                job.progress = 100.0
-            except DownloadError as exc:
-                job.status = "error"
-                job.error = str(exc)
+        def _do_download(ydl_opts: dict) -> None:
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(job.url, download=True)
+                if info:
+                    job.title = info.get("title") or job.title
+                    final = info.get("requested_downloads") or []
+                    if final:
+                        job.filename = Path(final[0]["filepath"]).name
+
+        try:
+            with _cookie_opts(job.cookies) as extra:
+                try:
+                    _do_download(_base_opts(job.format_id or FORMAT_SELECTOR, extra))
+                except DownloadError as exc:
+                    # Specific format IDs from unauthenticated inspection may not
+                    # exist in the authenticated manifest — retry with auto-selection.
+                    if job.format_id and "not available" in str(exc):
+                        job.stream_progress = [0.0]
+                        job.stream_bytes = [[0, 0]]
+                        _do_download(_base_opts(FORMAT_SELECTOR, extra))
+                    else:
+                        raise
+            job.status = "done"
+            job.progress = 100.0
+        except DownloadError as exc:
+            job.status = "error"
+            job.error = str(exc)
