@@ -85,7 +85,7 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
     with _cookie_opts(cookies) as extra:
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **extra}
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url.strip(), download=False)
+            info = ydl.extract_info(url.strip(), download=False, process=False)
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
