@@ -31,7 +31,10 @@ echo "    Example (replace UUID with yours from 'blkid'):"
 echo "    UUID=<your-uuid>  ${USB_MOUNT}  auto  defaults,nofail  0  2"
 
 echo "==> Creating videos directory at ${VIDEOS_DIR}"
-install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}"
+# exFAT doesn't support chown; fall back to plain mkdir if install fails.
+if ! install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}" 2>/dev/null; then
+  mkdir -p "${VIDEOS_DIR}"
+fi
 
 echo "==> Syncing repo to ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
