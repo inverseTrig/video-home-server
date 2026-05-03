@@ -13,7 +13,7 @@ iPhone Safari  ──POST /api/download──►  Flask (port 8080)
                                               │
                                          yt-dlp worker
                                               │
-                                         /home/pi/videos/
+                                         /mnt/usb/videos/
                                          ┌────┴────┐
                                       vsftpd     smbd
                                       (FTP)     (SMB)
@@ -62,12 +62,23 @@ sudo bash scripts/set-hostname.sh mypi
 | Step | Detail |
 |------|--------|
 | apt packages | `python3`, `ffmpeg`, `vsftpd`, `samba`, `avahi-daemon` |
-| Videos dir | Creates `/home/pi/videos` owned by `pi` |
+| USB mount point | Creates `/mnt/usb` and prints an fstab hint (see below) |
+| Videos dir | Creates `/mnt/usb/videos` owned by `pi` |
 | Python venv | `/opt/video-home-server/.venv` with Flask + yt-dlp |
 | vsftpd | Replaces `/etc/vsftpd.conf`; backs up original to `.orig` |
 | Samba | Appends `[Videos]` share to `/etc/samba/smb.conf`; backs up original |
-| systemd | Installs and enables `video-home-server.service` (runs as `pi`) |
+| systemd | Installs and enables `video-home-server.service` (runs as `pi`); waits for `/mnt/usb` to be mounted before starting |
 | Avahi | Ensures mDNS is running so `.local` names resolve |
+
+### USB drive setup
+
+Before running the installer, mount your USB drive at `/mnt/usb` and add it to `/etc/fstab` so it survives reboots. Use `blkid` to find the drive's UUID, then add a line like:
+
+```
+UUID=<your-uuid>  /mnt/usb  auto  defaults,nofail  0  2
+```
+
+The `nofail` option lets the Pi boot normally even if the USB isn't plugged in (the service will simply fail to start until the drive is connected).
 
 ---
 
@@ -99,7 +110,7 @@ Environment variables for the Flask service (set in `systemd/video-home-server.s
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIDEOS_DIR` | `/home/pi/videos` | Where downloads are stored |
+| `VIDEOS_DIR` | `/mnt/usb/videos` | Where downloads are stored |
 | `HOST` | `0.0.0.0` | Flask bind address |
 | `PORT` | `8080` | Flask port |
 
