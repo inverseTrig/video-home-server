@@ -12,6 +12,10 @@
    # VLC Android's libsmb2 silently returns empty listings when signing is
    # negotiated; disabling it lets the directory read succeed.
    server signing = disabled
+   # Hide printer infrastructure — this is a video-only server.
+   load printers = no
+   disable spoolss = yes
+   printing = bsd
 
 [Videos]
    path = /mnt/usb/videos

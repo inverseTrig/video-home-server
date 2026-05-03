@@ -112,15 +112,36 @@ if [[ ! -f /etc/samba/smb.conf.orig ]]; then
   cp /etc/samba/smb.conf /etc/samba/smb.conf.orig
 fi
 # Always remove any existing section and re-append so re-runs pick up changes.
+# Also suppress default Samba shares ([homes] → "nobody", [printers], [print$])
+# so VLC's media-library scanner only sees the Videos share.
 python3 - <<'PYEOF'
-import sys
+import re
 path = '/etc/samba/smb.conf'
 marker = '\n# === video-home-server share ==='
 content = open(path).read()
+# Remove previously-appended section so re-runs are idempotent.
 idx = content.find(marker)
 if idx != -1:
     content = content[:idx]
-    open(path, 'w').write(content)
+
+# Inject "available = no" into built-in shares we want to hide.
+# [homes] becomes a "nobody" share for guest connections; [printers] and
+# [print$] are printer-driver shares — none of these belong in VLC.
+def disable_section(text, section):
+    pattern = r'(\[' + re.escape(section) + r'\][^\[]*)'
+    def replacer(m):
+        block = m.group(1)
+        if 'available' not in block:
+            lines = block.split('\n')
+            lines.insert(1, '   available = no')
+            return '\n'.join(lines)
+        return block
+    return re.sub(pattern, replacer, text, flags=re.DOTALL)
+
+for s in ('homes', 'printers', 'print$'):
+    content = disable_section(content, s)
+
+open(path, 'w').write(content)
 PYEOF
 {
   echo ""
