@@ -103,8 +103,11 @@ class Downloader:
                 if not job.title and info.get("title"):
                     job.title = info["title"]
             elif d.get("status") == "finished":
-                # Post-processing (merge) starts after this.
-                job.progress = 100.0
+                # A stream finished but ffmpeg merge hasn't run yet; keep
+                # progress just below 100 so the UI doesn't show done early.
+                job.progress = 99.0
+                job.eta = None
+                job.speed = None
 
         ydl_opts = {
             "format": FORMAT_SELECTOR,
