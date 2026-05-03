@@ -42,6 +42,21 @@
     border: 1px solid var(--border);
   }
   .url-row { display: flex; gap: 8px; }
+  .cookie-toggle { font-size: 13px; color: var(--muted); margin-top: 6px; cursor: pointer; display: inline-block; }
+  .cookie-toggle:hover { color: var(--accent); }
+  #cookie-row { display: none; margin-top: 8px; }
+  textarea#cookie-input {
+    width: 100%;
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    resize: vertical;
+    min-height: 60px;
+  }
   input[type=url] {
     flex: 1;
     font-size: 16px;
@@ -138,6 +153,11 @@
                placeholder="Paste YouTube URL">
         <button id="btn-inspect">Get</button>
       </div>
+      <span class="cookie-toggle" id="cookie-toggle">+ Add cookies</span>
+      <div id="cookie-row">
+        <textarea id="cookie-input" autocomplete="off" autocorrect="off" spellcheck="false"
+                  placeholder="Paste Cookie header value, e.g. VISITOR_INFO1_LIVE=abc; YSC=xyz"></textarea>
+      </div>
       <div id="form-msg" class="meta" style="margin-top:8px;"></div>
     </div>
 
@@ -204,18 +224,28 @@ function escapeAttr(s) { return escapeHtml(s); }
 // ── Format picker state ────────────────────────────────────────────────────
 
 let pendingUrl = '';
+let pendingCookies = '';
 
-const urlStep    = document.getElementById('url-step');
-const fmtStep    = document.getElementById('format-step');
-const urlInput   = document.getElementById('url-input');
-const formMsg    = document.getElementById('form-msg');
-const fmtMsg     = document.getElementById('fmt-msg');
-const videoTitle = document.getElementById('video-title');
-const selVideo   = document.getElementById('sel-video');
-const selAudio   = document.getElementById('sel-audio');
-const btnInspect = document.getElementById('btn-inspect');
-const btnDownload= document.getElementById('btn-download');
-const btnCancel  = document.getElementById('btn-cancel');
+const urlStep     = document.getElementById('url-step');
+const fmtStep     = document.getElementById('format-step');
+const urlInput    = document.getElementById('url-input');
+const cookieToggle= document.getElementById('cookie-toggle');
+const cookieRow   = document.getElementById('cookie-row');
+const cookieInput = document.getElementById('cookie-input');
+const formMsg     = document.getElementById('form-msg');
+const fmtMsg      = document.getElementById('fmt-msg');
+const videoTitle  = document.getElementById('video-title');
+const selVideo    = document.getElementById('sel-video');
+const selAudio    = document.getElementById('sel-audio');
+const btnInspect  = document.getElementById('btn-inspect');
+const btnDownload = document.getElementById('btn-download');
+const btnCancel   = document.getElementById('btn-cancel');
+
+cookieToggle.addEventListener('click', () => {
+  const open = cookieRow.style.display !== 'none';
+  cookieRow.style.display = open ? 'none' : 'block';
+  cookieToggle.textContent = open ? '+ Add cookies' : '− Hide cookies';
+});
 
 function showUrlStep() {
   urlStep.style.display = '';
@@ -264,6 +294,7 @@ btnInspect.addEventListener('click', async () => {
   const url = urlInput.value.trim();
   if (!url) return;
   pendingUrl = url;
+  pendingCookies = cookieInput.value.trim();
   btnInspect.disabled = true;
   formMsg.textContent = 'Fetching formats…';
 
@@ -271,7 +302,7 @@ btnInspect.addEventListener('click', async () => {
     const r = await fetch('/api/formats', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url}),
+      body: JSON.stringify({url, cookies: pendingCookies || undefined}),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -311,7 +342,7 @@ btnDownload.addEventListener('click', async () => {
     const r = await fetch('/api/download', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: pendingUrl, format_id}),
+      body: JSON.stringify({url: pendingUrl, format_id, cookies: pendingCookies || undefined}),
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));

@@ -43,9 +43,11 @@ def _codec_short(raw: str | None) -> str | None:
     return _CODEC_NAMES.get(prefix, prefix)
 
 
-def get_formats(url: str) -> dict:
+def get_formats(url: str, cookies: str | None = None) -> dict:
     """Fetch available formats for *url* without downloading anything."""
-    ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+    ydl_opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True}
+    if cookies:
+        ydl_opts["http_headers"] = {"Cookie": cookies}
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url.strip(), download=False)
 
@@ -102,6 +104,7 @@ class Job:
     speed: Optional[float] = None
     created_at: float = field(default_factory=time.time)
     format_id: Optional[str] = None        # e.g. "299+140"; None → use FORMAT_SELECTOR
+    cookies: Optional[str] = None          # raw Cookie header value
     stream_progress: list = field(default_factory=lambda: [0.0])  # one entry per stream
     stream_bytes: list = field(default_factory=lambda: [[0, 0]])  # [[downloaded, total], …]
 
@@ -121,9 +124,10 @@ class Downloader:
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
-    def submit(self, url: str, format_id: str | None = None) -> Job:
+    def submit(self, url: str, format_id: str | None = None, cookies: str | None = None) -> Job:
         num_streams = 2 if format_id and "+" in format_id else 1
         job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id,
+                  cookies=cookies or None,
                   stream_progress=[0.0] * num_streams,
                   stream_bytes=[[0, 0]] * num_streams)
         with self._lock:
@@ -180,7 +184,7 @@ class Downloader:
                 job.eta = None
                 job.speed = None
 
-        ydl_opts = {
+        ydl_opts: dict = {
             "format": job.format_id or FORMAT_SELECTOR,
             "merge_output_format": "mp4",
             "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
@@ -194,6 +198,8 @@ class Downloader:
             "fragment_retries": 3,
             "concurrent_fragment_downloads": 4,
         }
+        if job.cookies:
+            ydl_opts["http_headers"] = {"Cookie": job.cookies}
 
         try:
             with YoutubeDL(ydl_opts) as ydl:
