@@ -1,6 +1,6 @@
 """Background YouTube downloader using yt-dlp.
 
-A single worker thread consumes a queue of jobs and writes progress into a
+A pool of worker threads consumes a queue of jobs and writes progress into a
 shared dict that the web layer reads. State is in-memory only — restarting
 the service drops the job history.
 """
@@ -184,7 +184,7 @@ class Job:
 
 
 class Downloader:
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path, max_workers: int = 3):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         if not os.access(self.output_dir, os.W_OK):
@@ -195,8 +195,8 @@ class Downloader:
         self._queue: "Queue[Job]" = Queue()
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        for _ in range(max(1, max_workers)):
+            threading.Thread(target=self._run, daemon=True).start()
 
     def submit(self, url: str, format_id: str | None = None, cookies: str | None = None) -> Job:
         num_streams = 2 if format_id and "+" in format_id else 1

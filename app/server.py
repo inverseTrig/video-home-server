@@ -15,12 +15,13 @@ from .library import Library, LibraryError
 VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", "/home/pi/videos"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
+MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "3"))
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
     library = Library(VIDEOS_DIR)
-    downloader = Downloader(VIDEOS_DIR)
+    downloader = Downloader(VIDEOS_DIR, max_workers=MAX_CONCURRENT_DOWNLOADS)
 
     @app.get("/")
     def index():
