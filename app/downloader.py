@@ -103,6 +103,7 @@ class Job:
     created_at: float = field(default_factory=time.time)
     format_id: Optional[str] = None        # e.g. "299+140"; None → use FORMAT_SELECTOR
     stream_progress: list = field(default_factory=lambda: [0.0])  # one entry per stream
+    stream_bytes: list = field(default_factory=lambda: [[0, 0]])  # [[downloaded, total], …]
 
 
 class Downloader:
@@ -123,7 +124,8 @@ class Downloader:
     def submit(self, url: str, format_id: str | None = None) -> Job:
         num_streams = 2 if format_id and "+" in format_id else 1
         job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id,
-                  stream_progress=[0.0] * num_streams)
+                  stream_progress=[0.0] * num_streams,
+                  stream_bytes=[[0, 0]] * num_streams)
         with self._lock:
             self._jobs[job.id] = job
         self._queue.put(job)
@@ -161,10 +163,11 @@ class Downloader:
             if d.get("status") == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes") or 0
+                idx = min(stream_idx, len(job.stream_progress) - 1)
                 if total:
-                    idx = min(stream_idx, len(job.stream_progress) - 1)
                     job.stream_progress[idx] = round(downloaded * 100.0 / total, 1)
                     job.progress = job.stream_progress[idx]
+                job.stream_bytes[idx] = [downloaded, total]
                 job.eta = d.get("eta")
                 job.speed = d.get("speed")
                 info = d.get("info_dict") or {}

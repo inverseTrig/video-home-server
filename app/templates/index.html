@@ -348,12 +348,17 @@ function renderProgressBars(j) {
   }
 
   const labels = sp.length === 2 ? ['Video', 'Audio'] : [''];
-  return `<div class="progress-wrap">${sp.map((pct, i) => `
+  const sb = j.stream_bytes || sp.map(() => [0, 0]);
+  return `<div class="progress-wrap">${sp.map((pct, i) => {
+    const [dl, tot] = sb[i] || [0, 0];
+    const sizeLabel = tot ? `${fmtSize(dl)} / ${fmtSize(tot)}` : `${pct.toFixed(0)}%`;
+    return `
     <div class="progress-row">
       ${sp.length > 1 ? `<span class="progress-label">${labels[i]}</span>` : ''}
       <div class="progress"><div style="width:${Math.min(pct, 100)}%"></div></div>
-      <span style="font-size:11px;color:var(--muted);width:36px;text-align:right;flex-shrink:0;">${pct.toFixed(0)}%</span>
-    </div>`).join('')}
+      <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;">${sizeLabel}</span>
+    </div>`;
+  }).join('')}
   </div>`;
 }
 
