@@ -9,6 +9,9 @@
    multicast dns register = no
    disable netbios = yes
    server min protocol = SMB2_02
+   # VLC Android's libsmb2 silently returns empty listings when signing is
+   # negotiated; disabling it lets the directory read succeed.
+   server signing = disabled
 
 [Videos]
    path = /mnt/usb/videos
