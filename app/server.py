@@ -9,7 +9,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from .downloader import Downloader
+from .downloader import Downloader, get_formats
 from .library import Library, LibraryError
 
 VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", "/home/pi/videos"))
@@ -26,13 +26,25 @@ def create_app() -> Flask:
     def index():
         return render_template("index.html")
 
+    @app.post("/api/formats")
+    def api_formats():
+        data = request.get_json(silent=True) or request.form
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "url is required"}), 400
+        try:
+            return jsonify(get_formats(url))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @app.post("/api/download")
     def api_download():
         data = request.get_json(silent=True) or request.form
         url = (data.get("url") or "").strip()
         if not url:
             return jsonify({"error": "url is required"}), 400
-        job = downloader.submit(url)
+        format_id = (data.get("format_id") or "").strip() or None
+        job = downloader.submit(url, format_id=format_id)
         return jsonify({"id": job.id, "url": job.url, "status": job.status})
 
     @app.get("/api/downloads")

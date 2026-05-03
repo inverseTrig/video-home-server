@@ -1,6 +1,7 @@
 """Filesystem-backed video library."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 VIDEO_EXTS = {".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi"}
@@ -19,6 +20,13 @@ class Library:
         items = []
         for entry in self.root.iterdir():
             if not entry.is_file() or entry.suffix.lower() not in VIDEO_EXTS:
+                continue
+            # Skip yt-dlp intermediate files: format fragments (.fNNN.ext)
+            # and aria2/yt-dlp temp files (.part, .temp.ext).
+            name = entry.name
+            if name.endswith(".part") or ".temp." in name:
+                continue
+            if re.search(r'\.[f]\d+\.', name):
                 continue
             stat = entry.stat()
             items.append({

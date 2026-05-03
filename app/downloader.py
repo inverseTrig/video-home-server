@@ -28,6 +28,66 @@ FORMAT_SELECTOR = (
     "/b"
 )
 
+_CODEC_NAMES = {
+    "avc": "H.264", "avc1": "H.264",
+    "vp9": "VP9", "vp09": "VP9",
+    "av01": "AV1", "av1": "AV1",
+    "mp4a": "AAC",
+    "opus": "Opus",
+}
+
+def _codec_short(raw: str | None) -> str | None:
+    if not raw or raw == "none":
+        return None
+    prefix = raw.split(".")[0].lower()
+    return _CODEC_NAMES.get(prefix, prefix)
+
+
+def get_formats(url: str) -> dict:
+    """Fetch available formats for *url* without downloading anything."""
+    ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url.strip(), download=False)
+
+    video_formats: list[dict] = []
+    audio_formats: list[dict] = []
+
+    for f in (info.get("formats") or []):
+        vcodec = f.get("vcodec") or "none"
+        acodec = f.get("acodec") or "none"
+        fid    = f.get("format_id", "")
+        size   = f.get("filesize") or f.get("filesize_approx")
+
+        if vcodec != "none" and acodec == "none":
+            video_formats.append({
+                "id":     fid,
+                "ext":    f.get("ext"),
+                "height": f.get("height"),
+                "fps":    round(f.get("fps") or 0),
+                "codec":  _codec_short(vcodec),
+                "vbr":    f.get("vbr"),
+                "size":   size,
+            })
+        elif acodec != "none" and vcodec == "none":
+            audio_formats.append({
+                "id":    fid,
+                "ext":   f.get("ext"),
+                "codec": _codec_short(acodec),
+                "abr":   f.get("abr"),
+                "asr":   f.get("asr"),
+                "size":  size,
+            })
+
+    video_formats.sort(key=lambda f: (f.get("height") or 0, f.get("fps") or 0), reverse=True)
+    audio_formats.sort(key=lambda f: f.get("abr") or 0, reverse=True)
+
+    return {
+        "title":    info.get("title"),
+        "duration": info.get("duration"),
+        "video":    video_formats,
+        "audio":    audio_formats,
+    }
+
 
 @dataclass
 class Job:
@@ -41,6 +101,8 @@ class Job:
     eta: Optional[int] = None
     speed: Optional[float] = None
     created_at: float = field(default_factory=time.time)
+    format_id: Optional[str] = None        # e.g. "299+140"; None → use FORMAT_SELECTOR
+    stream_progress: list = field(default_factory=lambda: [0.0])  # one entry per stream
 
 
 class Downloader:
@@ -58,8 +120,10 @@ class Downloader:
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
-    def submit(self, url: str) -> Job:
-        job = Job(id=uuid.uuid4().hex[:8], url=url.strip())
+    def submit(self, url: str, format_id: str | None = None) -> Job:
+        num_streams = 2 if format_id and "+" in format_id else 1
+        job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id,
+                  stream_progress=[0.0] * num_streams)
         with self._lock:
             self._jobs[job.id] = job
         self._queue.put(job)
@@ -90,24 +154,31 @@ class Downloader:
 
     def _process(self, job: Job) -> None:
         job.status = "downloading"
+        stream_idx = 0  # increments on each "finished" event
 
         def hook(d: dict) -> None:
+            nonlocal stream_idx
             if d.get("status") == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes") or 0
                 if total:
-                    job.progress = round(downloaded * 100.0 / total, 1)
+                    idx = min(stream_idx, len(job.stream_progress) - 1)
+                    job.stream_progress[idx] = round(downloaded * 100.0 / total, 1)
+                    job.progress = job.stream_progress[idx]
                 job.eta = d.get("eta")
                 job.speed = d.get("speed")
                 info = d.get("info_dict") or {}
                 if not job.title and info.get("title"):
                     job.title = info["title"]
             elif d.get("status") == "finished":
-                # Post-processing (merge) starts after this.
-                job.progress = 100.0
+                idx = min(stream_idx, len(job.stream_progress) - 1)
+                job.stream_progress[idx] = 100.0
+                stream_idx += 1
+                job.eta = None
+                job.speed = None
 
         ydl_opts = {
-            "format": FORMAT_SELECTOR,
+            "format": job.format_id or FORMAT_SELECTOR,
             "merge_output_format": "mp4",
             "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
             "noplaylist": True,
