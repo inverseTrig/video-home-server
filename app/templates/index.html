@@ -229,22 +229,33 @@ function showFmtStep() {
   fmtMsg.textContent = '';
 }
 
-function videoOptionLabel(f) {
+function estimateSize(bitrateKbps, duration) {
+  if (!bitrateKbps || !duration) return null;
+  return (bitrateKbps * 1000 / 8) * duration;
+}
+
+function fmtSizeLabel(exact, bitrateKbps, duration) {
+  if (exact != null) return fmtSize(exact);
+  const est = estimateSize(bitrateKbps, duration);
+  return est ? `~${fmtSize(est)}` : '';
+}
+
+function videoOptionLabel(f, duration) {
   const parts = [];
   if (f.height) parts.push(`${f.height}p`);
   if (f.fps > 30) parts.push(`${f.fps}fps`);
   if (f.codec)  parts.push(f.codec);
-  const size = fmtSize(f.size);
+  const size = fmtSizeLabel(f.size, f.vbr, duration);
   if (size) parts.push(size);
   return parts.join(' · ');
 }
 
-function audioOptionLabel(f) {
+function audioOptionLabel(f, duration) {
   const parts = [];
   if (f.abr)   parts.push(`${Math.round(f.abr)} kbps`);
   if (f.codec) parts.push(f.codec);
   if (f.asr)   parts.push(`${(f.asr/1000).toFixed(0)} kHz`);
-  const size = fmtSize(f.size);
+  const size = fmtSizeLabel(f.size, f.abr, duration);
   if (size) parts.push(size);
   return parts.join(' · ');
 }
@@ -266,13 +277,14 @@ btnInspect.addEventListener('click', async () => {
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
 
     videoTitle.textContent = j.title || url;
+    const duration = j.duration || null;
 
     selVideo.innerHTML = j.video.map(f =>
-      `<option value="${escapeAttr(f.id)}">${escapeHtml(videoOptionLabel(f))}</option>`
+      `<option value="${escapeAttr(f.id)}">${escapeHtml(videoOptionLabel(f, duration))}</option>`
     ).join('');
 
     selAudio.innerHTML = j.audio.map(f =>
-      `<option value="${escapeAttr(f.id)}">${escapeHtml(audioOptionLabel(f))}</option>`
+      `<option value="${escapeAttr(f.id)}">${escapeHtml(audioOptionLabel(f, duration))}</option>`
     ).join('');
 
     showFmtStep();
