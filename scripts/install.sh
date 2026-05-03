@@ -87,8 +87,11 @@ if idx != -1:
     content = content[:idx]
 
 # Inject "available = no" into built-in shares we want to hide.
+# Anchor to start-of-line (re.MULTILINE) so commented-out section headers
+# like "#[homes]" in Ubuntu's default smb.conf are never matched — matching
+# inside a comment injects the setting into the wrong (preceding) section.
 def disable_section(text, section):
-    pattern = r'(\[' + re.escape(section) + r'\][^\[]*)'
+    pattern = r'(^\[' + re.escape(section) + r'\][^\[]*)'
     def replacer(m):
         block = m.group(1)
         if 'available' not in block:
@@ -96,7 +99,7 @@ def disable_section(text, section):
             lines.insert(1, '   available = no')
             return '\n'.join(lines)
         return block
-    return re.sub(pattern, replacer, text, flags=re.DOTALL)
+    return re.sub(pattern, replacer, text, flags=re.DOTALL | re.MULTILINE)
 
 for s in ('homes', 'printers', 'print$'):
     content = disable_section(content, s)
