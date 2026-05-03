@@ -69,12 +69,15 @@
   .grow { flex: 1; min-width: 0; }
   .name { font-weight: 500; word-break: break-word; }
   .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .progress-wrap { margin-top: 8px; }
+  .progress-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .progress-label { font-size: 11px; color: var(--muted); width: 36px; flex-shrink: 0; }
   .progress {
+    flex: 1;
     height: 6px;
     background: var(--border);
     border-radius: 3px;
     overflow: hidden;
-    margin-top: 8px;
   }
   .progress > div {
     height: 100%;
@@ -317,6 +320,31 @@ btnDownload.addEventListener('click', async () => {
 const downloadsEl = document.getElementById('downloads');
 const libraryEl   = document.getElementById('library');
 
+function renderProgressBars(j) {
+  const sp = j.stream_progress || [j.progress || 0];
+  const active = j.status === 'downloading' || j.status === 'queued';
+  if (!active) return '';
+
+  const allDone = sp.every(p => p >= 100);
+  if (allDone) {
+    // All streams downloaded; ffmpeg merge in progress.
+    return `<div class="progress-wrap">
+      <div class="progress-row">
+        <span class="progress-label" style="width:auto;color:var(--muted);font-size:12px;">Merging…</span>
+      </div>
+    </div>`;
+  }
+
+  const labels = sp.length === 2 ? ['Video', 'Audio'] : [''];
+  return `<div class="progress-wrap">${sp.map((pct, i) => `
+    <div class="progress-row">
+      ${sp.length > 1 ? `<span class="progress-label">${labels[i]}</span>` : ''}
+      <div class="progress"><div style="width:${Math.min(pct, 100)}%"></div></div>
+      <span style="font-size:11px;color:var(--muted);width:36px;text-align:right;flex-shrink:0;">${pct.toFixed(0)}%</span>
+    </div>`).join('')}
+  </div>`;
+}
+
 function renderDownloads(jobs) {
   const active = jobs.filter(j => j.status === 'queued' || j.status === 'downloading');
   const recent = jobs.filter(j => j.status === 'done' || j.status === 'error');
@@ -327,27 +355,21 @@ function renderDownloads(jobs) {
   }
   downloadsEl.innerHTML = list.map(j => {
     const title = j.title || j.url;
-    const pct = Math.max(0, Math.min(100, j.progress || 0));
     const etaBits = [];
     if (j.status === 'downloading') {
       if (j.speed) etaBits.push(`${fmtSize(j.speed)}/s`);
       if (j.eta != null) etaBits.push(`ETA ${fmtEta(j.eta)}`);
     }
-    const merging = j.status === 'downloading' && pct >= 99;
-    const metaLine = merging
-      ? 'Merging…'
-      : `${pct.toFixed(1)}%${etaBits.length ? ' · ' + etaBits.join(' · ') : ''}`;
     return `
       <div class="card">
         <div class="row">
           <div class="grow">
             <div class="name">${escapeHtml(title)}</div>
-            <div class="meta">${metaLine}</div>
+            ${etaBits.length ? `<div class="meta">${etaBits.join(' · ')}</div>` : ''}
           </div>
           <span class="badge ${j.status}">${j.status}</span>
         </div>
-        ${j.status === 'downloading' || j.status === 'queued'
-          ? `<div class="progress"><div style="width:${pct}%"></div></div>` : ''}
+        ${renderProgressBars(j)}
         ${j.error ? `<div class="err">${escapeHtml(j.error)}</div>` : ''}
       </div>
     `;

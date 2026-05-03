@@ -101,7 +101,8 @@ class Job:
     eta: Optional[int] = None
     speed: Optional[float] = None
     created_at: float = field(default_factory=time.time)
-    format_id: Optional[str] = None  # e.g. "299+140"; None → use FORMAT_SELECTOR
+    format_id: Optional[str] = None        # e.g. "299+140"; None → use FORMAT_SELECTOR
+    stream_progress: list = field(default_factory=lambda: [0.0])  # one entry per stream
 
 
 class Downloader:
@@ -120,7 +121,9 @@ class Downloader:
         self._worker.start()
 
     def submit(self, url: str, format_id: str | None = None) -> Job:
-        job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id)
+        num_streams = 2 if format_id and "+" in format_id else 1
+        job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id,
+                  stream_progress=[0.0] * num_streams)
         with self._lock:
             self._jobs[job.id] = job
         self._queue.put(job)
@@ -151,22 +154,26 @@ class Downloader:
 
     def _process(self, job: Job) -> None:
         job.status = "downloading"
+        stream_idx = 0  # increments on each "finished" event
 
         def hook(d: dict) -> None:
+            nonlocal stream_idx
             if d.get("status") == "downloading":
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
                 downloaded = d.get("downloaded_bytes") or 0
                 if total:
-                    job.progress = round(downloaded * 100.0 / total, 1)
+                    idx = min(stream_idx, len(job.stream_progress) - 1)
+                    job.stream_progress[idx] = round(downloaded * 100.0 / total, 1)
+                    job.progress = job.stream_progress[idx]
                 job.eta = d.get("eta")
                 job.speed = d.get("speed")
                 info = d.get("info_dict") or {}
                 if not job.title and info.get("title"):
                     job.title = info["title"]
             elif d.get("status") == "finished":
-                # A stream finished but ffmpeg merge hasn't run yet; keep
-                # progress just below 100 so the UI doesn't show done early.
-                job.progress = 99.0
+                idx = min(stream_idx, len(job.stream_progress) - 1)
+                job.stream_progress[idx] = 100.0
+                stream_idx += 1
                 job.eta = None
                 job.speed = None
 
