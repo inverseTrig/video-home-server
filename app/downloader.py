@@ -47,12 +47,46 @@ def _codec_short(raw: str | None) -> str | None:
 
 def _is_netscape_cookies(s: str) -> bool:
     """Return True if *s* looks like a Netscape/Mozilla cookie file."""
-    stripped = s.lstrip()
+    stripped = s.lstrip('﻿').lstrip()  # strip BOM then whitespace
     if stripped.startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
         return True
     # Files exported without the header still use tab-separated columns.
     # Raw Cookie header values use '; ' and never contain tabs.
     return "\t" in stripped
+
+
+_HTTPONLY_PREFIX = "#HttpOnly_"
+
+
+def _prepare_netscape_cookies(content: str) -> str:
+    """Normalise Netscape cookie file content before handing it to yt-dlp.
+
+    Strips BOM, normalises line endings to LF, ensures the magic header is
+    present, and truncates each data line to exactly 7 tab-separated fields.
+    Some browser extensions append extra columns (e.g. SameSite=Lax) which
+    cause MozillaCookieJar to raise ValueError: too many values to unpack.
+    """
+    content = content.lstrip('﻿')                     # strip UTF-8 BOM
+    content = content.replace('\r\n', '\n').replace('\r', '\n')  # normalise CRLF
+
+    if not content.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+        content = "# Netscape HTTP Cookie File\n" + content
+
+    lines = []
+    for line in content.split('\n'):
+        bare = line.rstrip()
+        if bare.startswith(_HTTPONLY_PREFIX):
+            # HttpOnly data line — strip prefix, cap fields, restore prefix.
+            data = bare[len(_HTTPONLY_PREFIX):]
+            fields = data.split('\t')
+            lines.append(_HTTPONLY_PREFIX + '\t'.join(fields[:7]))
+        elif bare.startswith('#') or not bare:
+            lines.append(bare)
+        else:
+            fields = bare.split('\t')
+            lines.append('\t'.join(fields[:7]))
+
+    return '\n'.join(lines)
 
 
 @contextlib.contextmanager
@@ -66,10 +100,10 @@ def _cookie_opts(cookies: str | None):
         yield {}
         return
     if _is_netscape_cookies(cookies):
-        content = cookies
-        if not cookies.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
-            content = "# Netscape HTTP Cookie File\n" + cookies
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+        content = _prepare_netscape_cookies(cookies)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write(content)
             tmp = f.name
         try:
