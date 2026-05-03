@@ -82,19 +82,10 @@ def _cookie_opts(cookies: str | None):
 
 def get_formats(url: str, cookies: str | None = None) -> dict:
     """Fetch available formats for *url* without downloading anything."""
-    def _fetch(extra: dict) -> dict:
+    with _cookie_opts(cookies) as extra:
         ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **extra}
         with YoutubeDL(ydl_opts) as ydl:
-            return ydl.extract_info(url.strip(), download=False)
-
-    if cookies:
-        try:
-            with _cookie_opts(cookies) as extra:
-                info = _fetch(extra)
-        except Exception:
-            info = _fetch({})
-    else:
-        info = _fetch({})
+            info = ydl.extract_info(url.strip(), download=False)
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
@@ -229,23 +220,22 @@ class Downloader:
                 job.eta = None
                 job.speed = None
 
-        with _cookie_opts(job.cookies) as extra:
-            ydl_opts: dict = {
-                "format": job.format_id or FORMAT_SELECTOR,
-                "merge_output_format": "mp4",
-                "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
-                "noplaylist": True,
-                "restrictfilenames": False,
-                "windowsfilenames": True,  # avoid characters that break SMB on iOS
-                "quiet": True,
-                "no_warnings": True,
-                "progress_hooks": [hook],
-                "retries": 3,
-                "fragment_retries": 3,
-                **extra,
-            }
-
-            try:
+        try:
+            with _cookie_opts(job.cookies) as extra:
+                ydl_opts: dict = {
+                    "format": job.format_id or FORMAT_SELECTOR,
+                    "merge_output_format": "mp4",
+                    "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
+                    "noplaylist": True,
+                    "restrictfilenames": False,
+                    "windowsfilenames": True,  # avoid characters that break SMB on iOS
+                    "quiet": True,
+                    "no_warnings": True,
+                    "progress_hooks": [hook],
+                    "retries": 3,
+                    "fragment_retries": 3,
+                    **extra,
+                }
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(job.url, download=True)
                     if info:
@@ -253,8 +243,8 @@ class Downloader:
                         final = info.get("requested_downloads") or []
                         if final:
                             job.filename = Path(final[0]["filepath"]).name
-                job.status = "done"
-                job.progress = 100.0
-            except DownloadError as exc:
-                job.status = "error"
-                job.error = str(exc)
+            job.status = "done"
+            job.progress = 100.0
+        except DownloadError as exc:
+            job.status = "error"
+            job.error = str(exc)
