@@ -45,19 +45,32 @@ def _codec_short(raw: str | None) -> str | None:
     return _CODEC_NAMES.get(prefix, prefix)
 
 
+def _is_netscape_cookies(s: str) -> bool:
+    """Return True if *s* looks like a Netscape/Mozilla cookie file."""
+    stripped = s.lstrip()
+    if stripped.startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+        return True
+    # Files exported without the header still use tab-separated columns.
+    # Raw Cookie header values use '; ' and never contain tabs.
+    return "\t" in stripped
+
+
 @contextlib.contextmanager
 def _cookie_opts(cookies: str | None):
     """Yield the ydl_opts dict fragment for the given cookie string.
 
-    Netscape-format content is written to a temp file (cookiefile); a raw
-    Cookie header value is passed directly via http_headers.
+    Netscape-format content (detected by header or tab separators) is written
+    to a temp file; a raw Cookie header value is passed via http_headers.
     """
     if not cookies:
         yield {}
         return
-    if cookies.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+    if _is_netscape_cookies(cookies):
+        content = cookies
+        if not cookies.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+            content = "# Netscape HTTP Cookie File\n" + cookies
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write(cookies)
+            f.write(content)
             tmp = f.name
         try:
             yield {"cookiefile": tmp}
