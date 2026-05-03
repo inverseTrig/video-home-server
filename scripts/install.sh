@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Idempotent installer for the Video Home Server on Raspberry Pi OS.
+# Idempotent installer for the Video Home Server on Ubuntu Server.
 # Run as root (sudo) from the repo root: sudo bash scripts/install.sh
 set -euo pipefail
 
@@ -10,9 +10,8 @@ fi
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 INSTALL_DIR="/opt/video-home-server"
-USB_MOUNT="/mnt/usb"
-VIDEOS_DIR="${USB_MOUNT}/videos"
-PI_USER="pi"
+SERVICE_USER="video-server"
+VIDEOS_DIR="/home/${SERVICE_USER}/videos"
 
 echo "==> Installing apt packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -22,81 +21,44 @@ apt-get install -y \
   ffmpeg \
   vsftpd \
   samba samba-common-bin \
-  avahi-daemon \
-  exfat-fuse
+  avahi-daemon
 
-echo "==> Setting up USB mount at ${USB_MOUNT}"
-mkdir -p "${USB_MOUNT}"
-
-PI_UID="$(id -u "${PI_USER}")"
-PI_GID="$(id -g "${PI_USER}")"
-
-# Detect the UUID of the first non-system removable block device.
-# Skips mmcblk (SD card) and nvme (boot SSD).
-detect_usb_uuid() {
-  lsblk -o NAME,UUID,HOTPLUG,TYPE -J 2>/dev/null \
-    | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-def walk(nodes):
-    for n in nodes:
-        if n.get('type') == 'part' and n.get('hotplug') == '1' and n.get('uuid'):
-            print(n['uuid'])
-            sys.exit(0)
-        walk(n.get('children') or [])
-walk(data.get('blockdevices', []))
-" 2>/dev/null || true
-}
-
-FSTAB_MARK="# video-home-server usb"
-if grep -q "${FSTAB_MARK}" /etc/fstab; then
-  echo "    fstab entry already present, skipping."
+echo "==> Creating service user '${SERVICE_USER}'"
+if ! id "${SERVICE_USER}" &>/dev/null; then
+  useradd -r -m -s /bin/bash "${SERVICE_USER}"
+  echo "    Created user ${SERVICE_USER}."
 else
-  USB_UUID="$(detect_usb_uuid)"
-  if [[ -z "${USB_UUID}" ]]; then
-    echo "    WARNING: No removable USB drive detected. Plug in the drive and re-run"
-    echo "    the installer, or add an fstab entry manually:"
-    echo "    UUID=<your-uuid>  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0"
-  else
-    echo "    Detected USB drive UUID=${USB_UUID}, writing fstab entry."
-    echo "UUID=${USB_UUID}  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0  ${FSTAB_MARK}" \
-      >> /etc/fstab
-    # Release any stale mounts before remounting with the correct options.
-    systemctl stop vsftpd 2>/dev/null || true
-    umount "${USB_MOUNT}" 2>/dev/null || true
-    umount "${USB_MOUNT}" 2>/dev/null || true  # clear double-mounts
-    mount "${USB_MOUNT}"
-    systemctl start vsftpd 2>/dev/null || true
-  fi
+  echo "    User ${SERVICE_USER} already exists, skipping."
 fi
+
+SERVICE_UID="$(id -u "${SERVICE_USER}")"
+SERVICE_GID="$(id -g "${SERVICE_USER}")"
 
 echo "==> Creating videos directory at ${VIDEOS_DIR}"
-# exFAT doesn't support chown; ownership comes from uid/gid mount options.
-if ! install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}" 2>/dev/null; then
-  mkdir -p "${VIDEOS_DIR}"
-fi
+install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0755 "${VIDEOS_DIR}"
+
+# vsftpd's anonymous user needs to traverse /home/video-server to reach videos/.
+# Ubuntu sets home dirs to 750 by default; relax just the execute bit for others.
+chmod o+x "/home/${SERVICE_USER}"
 
 # Verify the service user can actually write here; fail loudly if not.
-if ! sudo -u "${PI_USER}" test -w "${VIDEOS_DIR}" 2>/dev/null; then
+if ! sudo -u "${SERVICE_USER}" test -w "${VIDEOS_DIR}" 2>/dev/null; then
   echo ""
-  echo "  WARNING: ${VIDEOS_DIR} is not writable by '${PI_USER}'."
-  echo "  If the drive is exFAT, ensure the fstab entry includes uid=${PI_UID},gid=${PI_GID}."
-  echo "  Run 'sudo umount ${USB_MOUNT} && sudo mount ${USB_MOUNT}' after fixing fstab."
-  echo ""
+  echo "  ERROR: ${VIDEOS_DIR} is not writable by '${SERVICE_USER}'." >&2
+  exit 1
 fi
 
 echo "==> Syncing repo to ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
-# Copy app code + templates + configs; exclude the venv if re-running.
 rsync -a --delete \
   --exclude '.venv' --exclude '__pycache__' --exclude '.git' --exclude 'videos' \
   "${REPO_DIR}/" "${INSTALL_DIR}/"
-chown -R "${PI_USER}:${PI_USER}" "${INSTALL_DIR}"
+chown -R "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}"
 
 echo "==> Creating Python venv"
-sudo -u "${PI_USER}" python3 -m venv "${INSTALL_DIR}/.venv"
-sudo -u "${PI_USER}" "${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip
-sudo -u "${PI_USER}" "${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
+sudo -u "${SERVICE_USER}" python3 -m venv "${INSTALL_DIR}/.venv"
+sudo -u "${SERVICE_USER}" "${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip
+sudo -u "${SERVICE_USER}" "${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
 
 echo "==> Configuring vsftpd"
 if [[ -f /etc/vsftpd.conf && ! -f /etc/vsftpd.conf.orig ]]; then
@@ -125,8 +87,6 @@ if idx != -1:
     content = content[:idx]
 
 # Inject "available = no" into built-in shares we want to hide.
-# [homes] becomes a "nobody" share for guest connections; [printers] and
-# [print$] are printer-driver shares — none of these belong in VLC.
 def disable_section(text, section):
     pattern = r'(\[' + re.escape(section) + r'\][^\[]*)'
     def replacer(m):
@@ -159,9 +119,6 @@ systemctl enable smbd
 systemctl restart smbd
 
 echo "==> Enabling avahi (mDNS)"
-# Install our service file so avahi advertises the SMB share.
-# Samba's own mDNS is off (multicast dns register = no), making this the
-# single advertisement — one VIDEOPI entry in VLC instead of two.
 install -m 0644 "${INSTALL_DIR}/config/avahi-smb.service" \
   /etc/avahi/services/smb.service
 systemctl enable avahi-daemon
