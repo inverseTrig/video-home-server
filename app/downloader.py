@@ -6,7 +6,9 @@ the service drops the job history.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -43,13 +45,34 @@ def _codec_short(raw: str | None) -> str | None:
     return _CODEC_NAMES.get(prefix, prefix)
 
 
+@contextlib.contextmanager
+def _cookie_opts(cookies: str | None):
+    """Yield the ydl_opts dict fragment for the given cookie string.
+
+    Netscape-format content is written to a temp file (cookiefile); a raw
+    Cookie header value is passed directly via http_headers.
+    """
+    if not cookies:
+        yield {}
+        return
+    if cookies.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(cookies)
+            tmp = f.name
+        try:
+            yield {"cookiefile": tmp}
+        finally:
+            os.unlink(tmp)
+    else:
+        yield {"http_headers": {"Cookie": cookies}}
+
+
 def get_formats(url: str, cookies: str | None = None) -> dict:
     """Fetch available formats for *url* without downloading anything."""
-    ydl_opts: dict = {"quiet": True, "no_warnings": True, "noplaylist": True}
-    if cookies:
-        ydl_opts["http_headers"] = {"Cookie": cookies}
-    with YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url.strip(), download=False)
+    with _cookie_opts(cookies) as extra:
+        ydl_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, **extra}
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url.strip(), download=False)
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
@@ -184,33 +207,33 @@ class Downloader:
                 job.eta = None
                 job.speed = None
 
-        ydl_opts: dict = {
-            "format": job.format_id or FORMAT_SELECTOR,
-            "merge_output_format": "mp4",
-            "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
-            "noplaylist": True,
-            "restrictfilenames": False,
-            "windowsfilenames": True,  # avoid characters that break SMB on iOS
-            "quiet": True,
-            "no_warnings": True,
-            "progress_hooks": [hook],
-            "retries": 3,
-            "fragment_retries": 3,
-            "concurrent_fragment_downloads": 4,
-        }
-        if job.cookies:
-            ydl_opts["http_headers"] = {"Cookie": job.cookies}
+        with _cookie_opts(job.cookies) as extra:
+            ydl_opts: dict = {
+                "format": job.format_id or FORMAT_SELECTOR,
+                "merge_output_format": "mp4",
+                "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
+                "noplaylist": True,
+                "restrictfilenames": False,
+                "windowsfilenames": True,  # avoid characters that break SMB on iOS
+                "quiet": True,
+                "no_warnings": True,
+                "progress_hooks": [hook],
+                "retries": 3,
+                "fragment_retries": 3,
+                "concurrent_fragment_downloads": 4,
+                **extra,
+            }
 
-        try:
-            with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(job.url, download=True)
-                if info:
-                    job.title = info.get("title") or job.title
-                    final = info.get("requested_downloads") or []
-                    if final:
-                        job.filename = Path(final[0]["filepath"]).name
-            job.status = "done"
-            job.progress = 100.0
-        except DownloadError as exc:
-            job.status = "error"
-            job.error = str(exc)
+            try:
+                with YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(job.url, download=True)
+                    if info:
+                        job.title = info.get("title") or job.title
+                        final = info.get("requested_downloads") or []
+                        if final:
+                            job.filename = Path(final[0]["filepath"]).name
+                job.status = "done"
+                job.progress = 100.0
+            except DownloadError as exc:
+                job.status = "error"
+                job.error = str(exc)
