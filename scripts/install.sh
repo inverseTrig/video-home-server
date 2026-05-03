@@ -108,20 +108,32 @@ systemctl restart vsftpd
 
 echo "==> Configuring Samba"
 SMB_MARK="# === video-home-server share ==="
-if ! grep -qF "${SMB_MARK}" /etc/samba/smb.conf; then
-  if [[ ! -f /etc/samba/smb.conf.orig ]]; then
-    cp /etc/samba/smb.conf /etc/samba/smb.conf.orig
-  fi
-  {
-    echo ""
-    echo "${SMB_MARK}"
-    cat "${INSTALL_DIR}/config/smb.conf.snippet"
-  } >> /etc/samba/smb.conf
+if [[ ! -f /etc/samba/smb.conf.orig ]]; then
+  cp /etc/samba/smb.conf /etc/samba/smb.conf.orig
 fi
+# Always remove any existing section and re-append so re-runs pick up changes.
+python3 - <<'PYEOF'
+import sys
+path = '/etc/samba/smb.conf'
+marker = '\n# === video-home-server share ==='
+content = open(path).read()
+idx = content.find(marker)
+if idx != -1:
+    content = content[:idx]
+    open(path, 'w').write(content)
+PYEOF
+{
+  echo ""
+  echo "${SMB_MARK}"
+  cat "${INSTALL_DIR}/config/smb.conf.snippet"
+} >> /etc/samba/smb.conf
 # Ensure guest mapping is on so VLC's anonymous browse works.
 if ! grep -qE '^\s*map to guest\s*=' /etc/samba/smb.conf; then
   sed -i '/^\[global\]/a \   map to guest = Bad User' /etc/samba/smb.conf
 fi
+# nmbd (NetBIOS) is replaced by avahi for discovery; stop it if running.
+systemctl disable nmbd 2>/dev/null || true
+systemctl stop nmbd 2>/dev/null || true
 systemctl enable smbd
 systemctl restart smbd
 

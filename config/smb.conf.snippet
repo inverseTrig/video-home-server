@@ -2,16 +2,17 @@
 # Appended to /etc/samba/smb.conf by scripts/install.sh.
 # The installer also injects "map to guest = Bad User" into [global] if missing.
 
-# Override globals: let Avahi handle mDNS exclusively (prevents duplicate
-# VIDEOPI entries in VLC) and pin the floor to SMB2 for VLC Android.
+# Let Avahi handle mDNS exclusively (prevents duplicate VIDEOPI entries in VLC).
+# Disable NetBIOS broadcasts for the same reason (avahi covers discovery).
+# Pin SMB2 floor so VLC Android negotiates a compatible protocol level.
 [global]
    multicast dns register = no
-   min protocol = SMB2_02
+   disable netbios = yes
+   server min protocol = SMB2_02
 
 [Videos]
    path = /mnt/usb/videos
    browseable = yes
    read only = yes
    guest ok = yes
-   guest only = yes
    force user = pi
