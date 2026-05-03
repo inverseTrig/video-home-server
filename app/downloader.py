@@ -6,6 +6,7 @@ the service drops the job history.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 import uuid
@@ -46,6 +47,11 @@ class Downloader:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        if not os.access(self.output_dir, os.W_OK):
+            raise PermissionError(
+                f"Download directory is not writable: {self.output_dir}\n"
+                "If the drive is exFAT, add uid=<pi-uid>,gid=<pi-gid> to its fstab mount options."
+            )
         self._queue: "Queue[Job]" = Queue()
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
