@@ -1,0 +1,13 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Single mDNS advertisement for the Samba share.
+     Installed by scripts/install.sh to /etc/avahi/services/smb.service.
+     Samba's own mDNS registration is disabled (multicast dns register = no)
+     so this is the sole source — prevents duplicate entries in VLC. -->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service>
+    <type>_smb._tcp</type>
+    <port>445</port>
+  </service>
+</service-group>
