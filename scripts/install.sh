@@ -138,6 +138,11 @@ systemctl enable smbd
 systemctl restart smbd
 
 echo "==> Enabling avahi (mDNS)"
+# Install our service file so avahi advertises the SMB share.
+# Samba's own mDNS is off (multicast dns register = no), making this the
+# single advertisement — one VIDEOPI entry in VLC instead of two.
+install -m 0644 "${INSTALL_DIR}/config/avahi-smb.service" \
+  /etc/avahi/services/smb.service
 systemctl enable avahi-daemon
 systemctl restart avahi-daemon
 
