@@ -22,24 +22,56 @@ apt-get install -y \
   ffmpeg \
   vsftpd \
   samba samba-common-bin \
-  avahi-daemon
+  avahi-daemon \
+  exfat-fuse
 
-echo "==> Creating USB mount point at ${USB_MOUNT}"
+echo "==> Setting up USB mount at ${USB_MOUNT}"
 mkdir -p "${USB_MOUNT}"
 
-# Resolve the numeric uid/gid for PI_USER so we can embed them in the fstab hint.
-PI_UID="$(id -u "${PI_USER}" 2>/dev/null || echo 1000)"
-PI_GID="$(id -g "${PI_USER}" 2>/dev/null || echo 1000)"
+PI_UID="$(id -u "${PI_USER}")"
+PI_GID="$(id -g "${PI_USER}")"
 
-echo "    NOTE: Add your USB drive to /etc/fstab to auto-mount it at ${USB_MOUNT}."
-echo "    For exFAT drives (most USB sticks) use uid/gid so the service can write:"
-echo "    UUID=<your-uuid>  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0"
-echo "    For ext4 drives the simpler form works:"
-echo "    UUID=<your-uuid>  ${USB_MOUNT}  ext4  defaults,nofail  0  2"
+# Detect the UUID of the first non-system removable block device.
+# Skips mmcblk (SD card) and nvme (boot SSD).
+detect_usb_uuid() {
+  lsblk -o NAME,UUID,HOTPLUG,TYPE -J 2>/dev/null \
+    | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+def walk(nodes):
+    for n in nodes:
+        if n.get('type') == 'part' and n.get('hotplug') == '1' and n.get('uuid'):
+            print(n['uuid'])
+            sys.exit(0)
+        walk(n.get('children') or [])
+walk(data.get('blockdevices', []))
+" 2>/dev/null || true
+}
+
+FSTAB_MARK="# video-home-server usb"
+if grep -q "${FSTAB_MARK}" /etc/fstab; then
+  echo "    fstab entry already present, skipping."
+else
+  USB_UUID="$(detect_usb_uuid)"
+  if [[ -z "${USB_UUID}" ]]; then
+    echo "    WARNING: No removable USB drive detected. Plug in the drive and re-run"
+    echo "    the installer, or add an fstab entry manually:"
+    echo "    UUID=<your-uuid>  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0"
+  else
+    echo "    Detected USB drive UUID=${USB_UUID}, writing fstab entry."
+    echo "UUID=${USB_UUID}  ${USB_MOUNT}  exfat  defaults,nofail,uid=${PI_UID},gid=${PI_GID},fmask=0133,dmask=0022  0  0  ${FSTAB_MARK}" \
+      >> /etc/fstab
+    # Release any stale mounts before remounting with the correct options.
+    systemctl stop vsftpd 2>/dev/null || true
+    umount "${USB_MOUNT}" 2>/dev/null || true
+    umount "${USB_MOUNT}" 2>/dev/null || true  # clear double-mounts
+    mount "${USB_MOUNT}"
+    systemctl start vsftpd 2>/dev/null || true
+  fi
+fi
 
 echo "==> Creating videos directory at ${VIDEOS_DIR}"
-# exFAT doesn't support chown; ownership comes from mount options instead.
-# Try the ownership-aware install first; fall back to plain mkdir on exFAT.
+# exFAT doesn't support chown; ownership comes from uid/gid mount options.
 if ! install -d -o "${PI_USER}" -g "${PI_USER}" -m 0755 "${VIDEOS_DIR}" 2>/dev/null; then
   mkdir -p "${VIDEOS_DIR}"
 fi
@@ -48,8 +80,8 @@ fi
 if ! sudo -u "${PI_USER}" test -w "${VIDEOS_DIR}" 2>/dev/null; then
   echo ""
   echo "  WARNING: ${VIDEOS_DIR} is not writable by '${PI_USER}'."
-  echo "  Downloads will fail with 'Permission denied' until this is fixed."
-  echo "  If the drive is exFAT, re-mount it with uid=${PI_UID},gid=${PI_GID} (see fstab hint above)."
+  echo "  If the drive is exFAT, ensure the fstab entry includes uid=${PI_UID},gid=${PI_GID}."
+  echo "  Run 'sudo umount ${USB_MOUNT} && sudo mount ${USB_MOUNT}' after fixing fstab."
   echo ""
 fi
 
