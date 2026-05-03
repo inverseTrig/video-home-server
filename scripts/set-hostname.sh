@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set the Pi's hostname so it advertises as videopi.local on mDNS.
+# Set the server's hostname so it advertises as videoserver.local on mDNS.
 # Override the default by passing a name as the first arg.
 set -euo pipefail
 
@@ -8,7 +8,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-NEW_NAME="${1:-videopi}"
+NEW_NAME="${1:-videoserver}"
 CURRENT="$(hostname)"
 
 if [[ "${CURRENT}" == "${NEW_NAME}" ]]; then

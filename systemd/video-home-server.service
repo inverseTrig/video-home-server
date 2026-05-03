@@ -2,14 +2,13 @@
 Description=Video Home Server (yt-dlp web UI)
 After=network-online.target
 Wants=network-online.target
-RequiresMountsFor=/mnt/usb
 
 [Service]
 Type=simple
-User=pi
-Group=pi
+User=video-server
+Group=video-server
 WorkingDirectory=/opt/video-home-server
-Environment=VIDEOS_DIR=/mnt/usb/videos
+Environment=VIDEOS_DIR=/home/video-server/videos
 Environment=HOST=0.0.0.0
 Environment=PORT=8080
 ExecStart=/opt/video-home-server/.venv/bin/python -m app.server
