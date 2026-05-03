@@ -32,8 +32,9 @@ def create_app() -> Flask:
         url = (data.get("url") or "").strip()
         if not url:
             return jsonify({"error": "url is required"}), 400
+        cookies = (data.get("cookies") or "").strip() or None
         try:
-            return jsonify(get_formats(url))
+            return jsonify(get_formats(url, cookies=cookies))
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
@@ -44,7 +45,8 @@ def create_app() -> Flask:
         if not url:
             return jsonify({"error": "url is required"}), 400
         format_id = (data.get("format_id") or "").strip() or None
-        job = downloader.submit(url, format_id=format_id)
+        cookies = (data.get("cookies") or "").strip() or None
+        job = downloader.submit(url, format_id=format_id, cookies=cookies)
         return jsonify({"id": job.id, "url": job.url, "status": job.status})
 
     @app.get("/api/downloads")
