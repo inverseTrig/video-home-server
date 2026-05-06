@@ -119,7 +119,6 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
     with _cookie_opts(cookies) as extra:
         ydl_opts = {
             "quiet": True, "no_warnings": True, "noplaylist": True,
-            "format": "bestvideo*+bestaudio/best/b",
             **extra,
         }
         with YoutubeDL(ydl_opts) as ydl:
