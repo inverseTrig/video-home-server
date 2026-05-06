@@ -242,7 +242,7 @@ const btnDownload = document.getElementById('btn-download');
 const btnCancel   = document.getElementById('btn-cancel');
 
 cookieToggle.addEventListener('click', () => {
-  const open = cookieRow.style.display !== 'none';
+  const open = cookieRow.style.display === 'block';
   cookieRow.style.display = open ? 'none' : 'block';
   cookieToggle.textContent = open ? '+ Add cookies' : '− Hide cookies';
 });
