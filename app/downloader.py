@@ -120,13 +120,14 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
     with _cookie_opts(cookies) as extra:
         ydl_opts = {
             "quiet": True, "no_warnings": True, "noplaylist": True,
+            # Prevent yt-dlp from raising when its default format selector
+            # finds no match (e.g. Shorts, restricted videos). The full
+            # formats list is still returned in info['formats'].
+            "ignore_no_formats_error": True,
             **extra,
         }
         with YoutubeDL(ydl_opts) as ydl:
-            # process=False skips format selection so yt-dlp never runs its
-            # format validator — avoids "Requested format is not available"
-            # on videos where the default selector finds no match.
-            info = ydl.extract_info(url.strip(), download=False, process=False)
+            info = ydl.extract_info(url.strip(), download=False)
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
