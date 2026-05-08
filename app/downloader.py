@@ -120,13 +120,13 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
     with _cookie_opts(cookies) as extra:
         ydl_opts = {
             "quiet": True, "no_warnings": True, "noplaylist": True,
-            # Maximally permissive: prevents yt-dlp from failing format
-            # validation during info extraction on restricted/unusual videos.
-            "format": "bestvideo+bestaudio/bestvideo/bestaudio/best",
             **extra,
         }
         with YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url.strip(), download=False)
+            # process=False skips format selection so yt-dlp never runs its
+            # format validator — avoids "Requested format is not available"
+            # on videos where the default selector finds no match.
+            info = ydl.extract_info(url.strip(), download=False, process=False)
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
