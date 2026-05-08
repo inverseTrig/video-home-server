@@ -306,7 +306,6 @@ class Downloader:
                         }
 
                     ydl_opts["download_ranges"] = _range_fn
-                    ydl_opts["force_keyframes_at_cuts"] = True
 
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(job.url, download=True)
