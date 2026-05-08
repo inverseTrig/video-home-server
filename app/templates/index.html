@@ -327,6 +327,20 @@ const btnCancel     = document.getElementById('btn-cancel');
 trimStart.addEventListener('input', () => { trimModified = true; });
 trimEnd.addEventListener('input', () => { trimModified = true; });
 
+// Persist cookie across reloads
+const COOKIE_KEY = 'vhs_cookies';
+const savedCookie = localStorage.getItem(COOKIE_KEY);
+if (savedCookie) {
+  cookieInput.value = savedCookie;
+  cookieRow.style.display = 'block';
+  cookieToggle.textContent = '− Hide cookies';
+}
+cookieInput.addEventListener('input', () => {
+  const v = cookieInput.value.trim();
+  if (v) localStorage.setItem(COOKIE_KEY, cookieInput.value);
+  else localStorage.removeItem(COOKIE_KEY);
+});
+
 cookieToggle.addEventListener('click', () => {
   const open = cookieRow.style.display === 'block';
   cookieRow.style.display = open ? 'none' : 'block';
