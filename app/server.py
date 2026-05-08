@@ -1,6 +1,7 @@
 """Flask web app for the video home server."""
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -16,6 +17,18 @@ VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", "/home/pi/videos"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", "8080"))
 MAX_CONCURRENT_DOWNLOADS = int(os.environ.get("MAX_CONCURRENT_DOWNLOADS", "3"))
+SETTINGS_FILE = VIDEOS_DIR.parent / ".vhs_settings.json"
+
+
+def _read_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _write_settings(data: dict) -> None:
+    SETTINGS_FILE.write_text(json.dumps(data), encoding="utf-8")
 
 
 def create_app() -> Flask:
@@ -59,6 +72,18 @@ def create_app() -> Flask:
                                 start_time=start_time, end_time=end_time,
                                 custom_filename=custom_filename)
         return jsonify({"id": job.id, "url": job.url, "status": job.status})
+
+    @app.get("/api/settings")
+    def api_get_settings():
+        return jsonify(_read_settings())
+
+    @app.post("/api/settings")
+    def api_save_settings():
+        data = request.get_json(silent=True) or {}
+        settings = _read_settings()
+        settings.update(data)
+        _write_settings(settings)
+        return jsonify({"ok": True})
 
     @app.get("/api/downloads")
     def api_downloads():
