@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import tempfile
 import threading
 import time
@@ -164,6 +165,13 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
     }
 
 
+def _sanitize_filename(name: str) -> str:
+    """Remove path separators and filesystem-unsafe characters from a user-supplied name."""
+    name = re.sub(r'[\x00-\x1f/\\:|*?"<>]', '', name)
+    name = name.lstrip('.')
+    return name.strip() or "download"
+
+
 @dataclass
 class Job:
     id: str
@@ -178,6 +186,9 @@ class Job:
     created_at: float = field(default_factory=time.time)
     format_id: Optional[str] = None        # e.g. "299+140"; None → use FORMAT_SELECTOR
     cookies: Optional[str] = None          # raw Cookie header value
+    start_time: Optional[float] = None     # trim start in seconds
+    end_time: Optional[float] = None       # trim end in seconds
+    custom_filename: Optional[str] = None  # user-supplied output name (no extension)
     stream_progress: list = field(default_factory=lambda: [0.0])  # one entry per stream
     stream_bytes: list = field(default_factory=lambda: [[0, 0]])  # [[downloaded, total], …]
 
@@ -197,10 +208,15 @@ class Downloader:
         for _ in range(max(1, max_workers)):
             threading.Thread(target=self._run, daemon=True).start()
 
-    def submit(self, url: str, format_id: str | None = None, cookies: str | None = None) -> Job:
+    def submit(self, url: str, format_id: str | None = None, cookies: str | None = None,
+               start_time: float | None = None, end_time: float | None = None,
+               custom_filename: str | None = None) -> Job:
         num_streams = 2 if format_id and "+" in format_id else 1
         job = Job(id=uuid.uuid4().hex[:8], url=url.strip(), format_id=format_id,
                   cookies=cookies or None,
+                  start_time=start_time,
+                  end_time=end_time,
+                  custom_filename=custom_filename.strip() if custom_filename else None,
                   stream_progress=[0.0] * num_streams,
                   stream_bytes=[[0, 0]] * num_streams)
         with self._lock:
@@ -259,10 +275,15 @@ class Downloader:
 
         try:
             with _cookie_opts(job.cookies) as extra:
+                if job.custom_filename:
+                    outtmpl = str(self.output_dir / f"{_sanitize_filename(job.custom_filename)}.%(ext)s")
+                else:
+                    outtmpl = str(self.output_dir / "%(title)s [%(id)s].%(ext)s")
+
                 ydl_opts: dict = {
                     "format": job.format_id or FORMAT_SELECTOR,
                     "merge_output_format": "mp4",
-                    "outtmpl": str(self.output_dir / "%(title)s [%(id)s].%(ext)s"),
+                    "outtmpl": outtmpl,
                     "noplaylist": True,
                     "restrictfilenames": False,
                     "windowsfilenames": True,  # avoid characters that break SMB on iOS
@@ -273,6 +294,20 @@ class Downloader:
                     "fragment_retries": 3,
                     **extra,
                 }
+
+                if job.start_time or job.end_time is not None:
+                    _start = float(job.start_time or 0)
+                    _end = float(job.end_time) if job.end_time is not None else None
+
+                    def _range_fn(info_dict, ydl, s=_start, e=_end):
+                        yield {
+                            "start_time": s,
+                            "end_time": e if e is not None else (info_dict.get("duration") or float("inf")),
+                        }
+
+                    ydl_opts["download_ranges"] = _range_fn
+                    ydl_opts["force_keyframes_at_cuts"] = True
+
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(job.url, download=True)
                     if info:

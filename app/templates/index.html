@@ -140,6 +140,19 @@
   .fmt-actions { display: flex; gap: 8px; margin-top: 4px; }
   .fmt-actions button { flex: 1; }
   .fmt-actions button.secondary { flex: 0; }
+  .trim-row { display: flex; align-items: flex-end; gap: 8px; }
+  .trim-field { flex: 1; min-width: 0; }
+  .trim-sublabel { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .trim-sep { color: var(--muted); font-size: 16px; padding-bottom: 10px; }
+  input.time-input, input.filename-input {
+    width: 100%;
+    font-size: 15px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+  }
 </style>
 </head>
 <body>
@@ -171,6 +184,28 @@
       <div class="fmt-group">
         <div class="fmt-label">Audio</div>
         <select id="sel-audio"></select>
+      </div>
+      <div class="fmt-group">
+        <div class="fmt-label">Trim</div>
+        <div class="trim-row">
+          <div class="trim-field">
+            <span class="trim-sublabel">Start</span>
+            <input id="trim-start" class="time-input" type="text" inputmode="decimal"
+                   autocomplete="off" autocorrect="off" placeholder="0:00">
+          </div>
+          <span class="trim-sep">→</span>
+          <div class="trim-field">
+            <span class="trim-sublabel">End</span>
+            <input id="trim-end" class="time-input" type="text" inputmode="decimal"
+                   autocomplete="off" autocorrect="off" placeholder="0:00">
+          </div>
+        </div>
+      </div>
+      <div class="fmt-group">
+        <div class="fmt-label">File name</div>
+        <input id="custom-filename" class="filename-input" type="text"
+               autocomplete="off" autocorrect="off" autocapitalize="off"
+               placeholder="Leave blank to use video title">
       </div>
       <div class="fmt-actions">
         <button id="btn-download">Download</button>
@@ -221,25 +256,55 @@ function escapeHtml(s) {
 }
 function escapeAttr(s) { return escapeHtml(s); }
 
+function fmtDuration(s) {
+  if (!s && s !== 0) return '';
+  s = Math.round(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function parseTime(s) {
+  s = (s || '').trim();
+  if (!s) return null;
+  const parts = s.split(':');
+  if (parts.length > 3) return null;
+  const nums = parts.map(p => parseFloat(p.trim()));
+  if (nums.some(n => isNaN(n) || n < 0)) return null;
+  if (parts.length === 1) return nums[0];
+  if (parts.length === 2) return nums[0] * 60 + nums[1];
+  return nums[0] * 3600 + nums[1] * 60 + nums[2];
+}
+
 // ── Format picker state ────────────────────────────────────────────────────
 
 let pendingUrl = '';
 let pendingCookies = '';
+let pendingDuration = null;
+let trimModified = false;
 
-const urlStep     = document.getElementById('url-step');
-const fmtStep     = document.getElementById('format-step');
-const urlInput    = document.getElementById('url-input');
-const cookieToggle= document.getElementById('cookie-toggle');
-const cookieRow   = document.getElementById('cookie-row');
-const cookieInput = document.getElementById('cookie-input');
-const formMsg     = document.getElementById('form-msg');
-const fmtMsg      = document.getElementById('fmt-msg');
-const videoTitle  = document.getElementById('video-title');
-const selVideo    = document.getElementById('sel-video');
-const selAudio    = document.getElementById('sel-audio');
-const btnInspect  = document.getElementById('btn-inspect');
-const btnDownload = document.getElementById('btn-download');
-const btnCancel   = document.getElementById('btn-cancel');
+const urlStep       = document.getElementById('url-step');
+const fmtStep       = document.getElementById('format-step');
+const urlInput      = document.getElementById('url-input');
+const cookieToggle  = document.getElementById('cookie-toggle');
+const cookieRow     = document.getElementById('cookie-row');
+const cookieInput   = document.getElementById('cookie-input');
+const formMsg       = document.getElementById('form-msg');
+const fmtMsg        = document.getElementById('fmt-msg');
+const videoTitle    = document.getElementById('video-title');
+const selVideo      = document.getElementById('sel-video');
+const selAudio      = document.getElementById('sel-audio');
+const trimStart     = document.getElementById('trim-start');
+const trimEnd       = document.getElementById('trim-end');
+const customFilename= document.getElementById('custom-filename');
+const btnInspect    = document.getElementById('btn-inspect');
+const btnDownload   = document.getElementById('btn-download');
+const btnCancel     = document.getElementById('btn-cancel');
+
+trimStart.addEventListener('input', () => { trimModified = true; });
+trimEnd.addEventListener('input', () => { trimModified = true; });
 
 cookieToggle.addEventListener('click', () => {
   const open = cookieRow.style.display === 'block';
@@ -309,6 +374,7 @@ btnInspect.addEventListener('click', async () => {
 
     videoTitle.textContent = j.title || url;
     const duration = j.duration || null;
+    pendingDuration = duration;
 
     selVideo.innerHTML = j.video.map(f =>
       `<option value="${escapeAttr(f.id)}">${escapeHtml(videoOptionLabel(f, duration))}</option>`
@@ -317,6 +383,11 @@ btnInspect.addEventListener('click', async () => {
     selAudio.innerHTML = j.audio.map(f =>
       `<option value="${escapeAttr(f.id)}">${escapeHtml(audioOptionLabel(f, duration))}</option>`
     ).join('');
+
+    trimModified = false;
+    trimStart.value = '0:00';
+    trimEnd.value = duration ? fmtDuration(duration) : '';
+    customFilename.value = '';
 
     showFmtStep();
   } catch (err) {
@@ -327,6 +398,8 @@ btnInspect.addEventListener('click', async () => {
 });
 
 btnCancel.addEventListener('click', () => {
+  trimModified = false;
+  customFilename.value = '';
   showUrlStep();
 });
 
@@ -338,11 +411,23 @@ btnDownload.addEventListener('click', async () => {
   btnDownload.disabled = true;
   fmtMsg.textContent = 'Queuing…';
 
+  const body = {url: pendingUrl, format_id, cookies: pendingCookies || undefined};
+
+  if (trimModified) {
+    const start = parseTime(trimStart.value);
+    const end = parseTime(trimEnd.value);
+    if (start !== null && start > 0) body.start_time = start;
+    if (end !== null) body.end_time = end;
+  }
+
+  const cfVal = customFilename.value.trim();
+  if (cfVal) body.custom_filename = cfVal;
+
   try {
     const r = await fetch('/api/download', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({url: pendingUrl, format_id, cookies: pendingCookies || undefined}),
+      body: JSON.stringify(body),
     });
     if (!r.ok) {
       const j = await r.json().catch(() => ({}));

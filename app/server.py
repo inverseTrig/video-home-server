@@ -47,7 +47,17 @@ def create_app() -> Flask:
             return jsonify({"error": "url is required"}), 400
         format_id = (data.get("format_id") or "").strip() or None
         cookies = (data.get("cookies") or "").strip() or None
-        job = downloader.submit(url, format_id=format_id, cookies=cookies)
+        custom_filename = (data.get("custom_filename") or "").strip() or None
+        start_time_raw = data.get("start_time")
+        end_time_raw = data.get("end_time")
+        try:
+            start_time = float(start_time_raw) if start_time_raw is not None else None
+            end_time = float(end_time_raw) if end_time_raw is not None else None
+        except (TypeError, ValueError):
+            return jsonify({"error": "start_time and end_time must be numbers"}), 400
+        job = downloader.submit(url, format_id=format_id, cookies=cookies,
+                                start_time=start_time, end_time=end_time,
+                                custom_filename=custom_filename)
         return jsonify({"id": job.id, "url": job.url, "status": job.status})
 
     @app.get("/api/downloads")
