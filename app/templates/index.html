@@ -221,6 +221,15 @@
   <h2>Library</h2>
   <div id="library"></div>
 
+  <h2>Debug Log</h2>
+  <div class="card" style="padding:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-bottom:1px solid var(--border);">
+      <span style="font-size:12px;color:var(--muted);">API activity</span>
+      <button id="btn-clear-log" class="secondary" style="font-size:12px;padding:4px 8px;">Clear</button>
+    </div>
+    <pre id="debug-log" style="margin:0;padding:10px 14px;font-size:11px;font-family:ui-monospace,monospace;white-space:pre-wrap;word-break:break-all;max-height:260px;overflow-y:auto;color:var(--fg);background:transparent;"></pre>
+  </div>
+
   <h2>System</h2>
   <div class="card">
     <div class="row" style="flex-wrap:wrap;gap:8px;">
@@ -232,6 +241,18 @@
   </div>
 
 <script>
+// ── Debug log ──────────────────────────────────────────────────────────────
+
+const debugLog = document.getElementById('debug-log');
+document.getElementById('btn-clear-log').addEventListener('click', () => { debugLog.textContent = ''; });
+
+function dbg(label, data) {
+  const ts = new Date().toLocaleTimeString();
+  const line = `[${ts}] ${label}\n${typeof data === 'string' ? data : JSON.stringify(data, null, 2)}\n\n`;
+  debugLog.textContent += line;
+  debugLog.scrollTop = debugLog.scrollHeight;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function fmtSize(n) {
@@ -364,12 +385,14 @@ btnInspect.addEventListener('click', async () => {
   formMsg.textContent = 'Fetching formats…';
 
   try {
+    dbg('GET FORMATS →', {url});
     const r = await fetch('/api/formats', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({url, cookies: pendingCookies || undefined}),
     });
     const j = await r.json();
+    dbg(`GET FORMATS ← ${r.status}`, j);
     if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
 
     videoTitle.textContent = j.title || url;
@@ -391,6 +414,7 @@ btnInspect.addEventListener('click', async () => {
 
     showFmtStep();
   } catch (err) {
+    dbg('GET FORMATS error', err.message);
     formMsg.textContent = `Error: ${err.message}`;
   } finally {
     btnInspect.disabled = false;
@@ -424,19 +448,20 @@ btnDownload.addEventListener('click', async () => {
   if (cfVal) body.custom_filename = cfVal;
 
   try {
+    dbg('DOWNLOAD →', body);
     const r = await fetch('/api/download', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body),
     });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      throw new Error(j.error || `HTTP ${r.status}`);
-    }
+    const j2 = await r.json().catch(() => ({}));
+    dbg(`DOWNLOAD ← ${r.status}`, j2);
+    if (!r.ok) throw new Error(j2.error || `HTTP ${r.status}`);
     urlInput.value = '';
     showUrlStep();
     refresh();
   } catch (err) {
+    dbg('DOWNLOAD error', err.message);
     fmtMsg.textContent = `Error: ${err.message}`;
   } finally {
     btnDownload.disabled = false;
