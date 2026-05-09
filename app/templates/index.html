@@ -327,6 +327,27 @@ const btnCancel     = document.getElementById('btn-cancel');
 trimStart.addEventListener('input', () => { trimModified = true; });
 trimEnd.addEventListener('input', () => { trimModified = true; });
 
+// Persist cookie server-side so any device sees the same value
+let cookieSaveTimer = null;
+fetch('/api/settings').then(r => r.json()).then(s => {
+  if (s.cookie) {
+    cookieInput.value = s.cookie;
+    cookieRow.style.display = 'block';
+    cookieToggle.textContent = '− Hide cookies';
+  }
+}).catch(() => {});
+
+cookieInput.addEventListener('input', () => {
+  clearTimeout(cookieSaveTimer);
+  cookieSaveTimer = setTimeout(() => {
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cookie: cookieInput.value}),
+    }).catch(() => {});
+  }, 800);
+});
+
 cookieToggle.addEventListener('click', () => {
   const open = cookieRow.style.display === 'block';
   cookieRow.style.display = open ? 'none' : 'block';
