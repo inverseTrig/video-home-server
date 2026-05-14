@@ -45,6 +45,7 @@
   .cookie-toggle { font-size: 13px; color: var(--muted); margin-top: 6px; cursor: pointer; display: inline-block; }
   .cookie-toggle:hover { color: var(--accent); }
   #cookie-row { display: none; margin-top: 8px; }
+  #cookie-row.open { display: block; }
   textarea#cookie-input {
     width: 100%;
     font-size: 13px;
@@ -332,7 +333,7 @@ let cookieSaveTimer = null;
 fetch('/api/settings').then(r => r.json()).then(s => {
   if (s.cookie) {
     cookieInput.value = s.cookie;
-    cookieRow.style.display = 'block';
+    cookieRow.classList.add('open');
     cookieToggle.textContent = '− Hide cookies';
   }
 }).catch(() => {});
@@ -349,8 +350,8 @@ cookieInput.addEventListener('input', () => {
 });
 
 cookieToggle.addEventListener('click', () => {
-  const open = cookieRow.style.display === 'block';
-  cookieRow.style.display = open ? 'none' : 'block';
+  const open = cookieRow.classList.contains('open');
+  cookieRow.classList.toggle('open');
   cookieToggle.textContent = open ? '+ Add cookies' : '− Hide cookies';
 });
 
