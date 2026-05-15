@@ -44,8 +44,7 @@
   .url-row { display: flex; gap: 8px; }
   .cookie-toggle { font-size: 13px; color: var(--muted); margin-top: 6px; cursor: pointer; display: inline-block; }
   .cookie-toggle:hover { color: var(--accent); }
-  #cookie-row { display: none; margin-top: 8px; }
-  #cookie-row.open { display: block; }
+  #cookie-row { margin-top: 8px; }
   textarea#cookie-input {
     width: 100%;
     font-size: 13px;
@@ -168,7 +167,7 @@
         <button id="btn-inspect">Get</button>
       </div>
       <span class="cookie-toggle" id="cookie-toggle">+ Add cookies</span>
-      <div id="cookie-row">
+      <div id="cookie-row" hidden>
         <textarea id="cookie-input" autocomplete="off" autocorrect="off" spellcheck="false"
                   placeholder="Paste Netscape cookie file contents, or raw Cookie header value (name=value; name2=value2)"></textarea>
       </div>
@@ -333,7 +332,7 @@ let cookieSaveTimer = null;
 fetch('/api/settings').then(r => r.json()).then(s => {
   if (s.cookie) {
     cookieInput.value = s.cookie;
-    cookieRow.classList.add('open');
+    cookieRow.hidden = false;
     cookieToggle.textContent = '− Hide cookies';
   }
 }).catch(() => {});
@@ -350,9 +349,8 @@ cookieInput.addEventListener('input', () => {
 });
 
 cookieToggle.addEventListener('click', () => {
-  const open = cookieRow.classList.contains('open');
-  cookieRow.classList.toggle('open');
-  cookieToggle.textContent = open ? '+ Add cookies' : '− Hide cookies';
+  cookieRow.hidden = !cookieRow.hidden;
+  cookieToggle.textContent = cookieRow.hidden ? '+ Add cookies' : '− Hide cookies';
 });
 
 function showUrlStep() {
