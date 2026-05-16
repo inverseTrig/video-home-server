@@ -168,7 +168,7 @@
       </div>
       <span class="cookie-toggle" id="cookie-toggle">+ Add cookies</span>
       <div id="cookie-row" hidden>
-        <textarea id="cookie-input" autocomplete="off" autocorrect="off" spellcheck="false"
+        <textarea id="cookie-input" rows="3" autocomplete="off" autocorrect="off" spellcheck="false"
                   placeholder="Paste Netscape cookie file contents, or raw Cookie header value (name=value; name2=value2)"></textarea>
       </div>
       <div id="form-msg" class="meta" style="margin-top:8px;"></div>
@@ -312,6 +312,10 @@ const urlInput      = document.getElementById('url-input');
 const cookieToggle  = document.getElementById('cookie-toggle');
 const cookieRow     = document.getElementById('cookie-row');
 const cookieInput   = document.getElementById('cookie-input');
+// Convert hidden attribute to inline style so toggling is handled entirely in JS,
+// avoiding the CSS-vs-attribute repaint failures seen on some mobile browsers.
+cookieRow.removeAttribute('hidden');
+cookieRow.style.display = 'none';
 const formMsg       = document.getElementById('form-msg');
 const fmtMsg        = document.getElementById('fmt-msg');
 const videoTitle    = document.getElementById('video-title');
@@ -332,7 +336,7 @@ let cookieSaveTimer = null;
 fetch('/api/settings').then(r => r.json()).then(s => {
   if (s.cookie) {
     cookieInput.value = s.cookie;
-    cookieRow.hidden = false;
+    cookieRow.style.display = 'block';
     cookieToggle.textContent = '− Hide cookies';
   }
 }).catch(() => {});
@@ -349,8 +353,9 @@ cookieInput.addEventListener('input', () => {
 });
 
 cookieToggle.addEventListener('click', () => {
-  cookieRow.hidden = !cookieRow.hidden;
-  cookieToggle.textContent = cookieRow.hidden ? '+ Add cookies' : '− Hide cookies';
+  const willShow = cookieRow.style.display !== 'block';
+  cookieRow.style.display = willShow ? 'block' : 'none';
+  cookieToggle.textContent = willShow ? '− Hide cookies' : '+ Add cookies';
 });
 
 function showUrlStep() {
