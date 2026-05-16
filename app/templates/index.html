@@ -426,11 +426,13 @@ btnInspect.addEventListener('click', async () => {
 
     selVideo.innerHTML = j.video.map(f =>
       `<option value="${escapeAttr(f.id)}">${escapeHtml(videoOptionLabel(f, duration))}</option>`
-    ).join('');
+    ).join('') || '<option value="">Best available (auto)</option>';
 
     selAudio.innerHTML = j.audio.map(f =>
       `<option value="${escapeAttr(f.id)}">${escapeHtml(audioOptionLabel(f, duration))}</option>`
-    ).join('');
+    ).join('') || '<option value="">—</option>';
+
+    if (j.warning) fmtMsg.textContent = j.warning;
 
     trimModified = false;
     trimStart.value = '0:00';

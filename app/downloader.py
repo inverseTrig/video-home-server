@@ -142,6 +142,7 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
+    muxed_formats: list[dict] = []
 
     for f in (info.get("formats") or []):
         vcodec = f.get("vcodec") or "none"
@@ -168,15 +169,40 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
                 "asr":   f.get("asr"),
                 "size":  size,
             })
+        elif vcodec != "none" and acodec != "none":
+            muxed_formats.append({
+                "id":     fid,
+                "ext":    f.get("ext"),
+                "height": f.get("height"),
+                "fps":    round(f.get("fps") or 0),
+                "codec":  _codec_short(vcodec),
+                "size":   size,
+            })
 
     video_formats.sort(key=lambda f: (f.get("height") or 0, f.get("fps") or 0), reverse=True)
     audio_formats.sort(key=lambda f: f.get("abr") or 0, reverse=True)
+    muxed_formats.sort(key=lambda f: (f.get("height") or 0, f.get("fps") or 0), reverse=True)
+
+    # When no separate DASH streams are available (e.g. bot-detection returning
+    # only legacy muxed formats), fall back to muxed so the picker isn't empty.
+    if not video_formats and muxed_formats:
+        video_formats = muxed_formats
+        audio_formats = []
+
+    raw_count = len(info.get("formats") or [])
+    warning = None
+    if not video_formats and not audio_formats:
+        warning = "No streamable formats found. The video may be restricted or yt-dlp may need updating."
+    elif not video_formats or not audio_formats:
+        warning = "Only muxed formats available — audio and video cannot be selected separately."
 
     return {
-        "title":    info.get("title"),
-        "duration": info.get("duration"),
-        "video":    video_formats,
-        "audio":    audio_formats,
+        "title":       info.get("title"),
+        "duration":    info.get("duration"),
+        "video":       video_formats,
+        "audio":       audio_formats,
+        "raw_formats": raw_count,
+        "warning":     warning,
     }
 
 
