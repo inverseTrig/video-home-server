@@ -124,10 +124,21 @@ def get_formats(url: str, cookies: str | None = None) -> dict:
             # finds no match (e.g. Shorts, restricted videos). The full
             # formats list is still returned in info['formats'].
             "ignore_no_formats_error": True,
+            "socket_timeout": 30,
             **extra,
         }
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url.strip(), download=False)
+
+    # extract_info returns None (instead of raising) when ignore_no_formats_error
+    # is set and no format can be selected — e.g. bot-detection, geo-restriction,
+    # or age-gating without cookies.
+    if not info:
+        raise ValueError(
+            "Could not retrieve video information. "
+            "The video may be unavailable, age-restricted, or geo-blocked. "
+            "Try adding authentication cookies."
+        )
 
     video_formats: list[dict] = []
     audio_formats: list[dict] = []
